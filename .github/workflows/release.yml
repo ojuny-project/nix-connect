@@ -1,0 +1,197 @@
+name: release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to create, for example v0.1.0
+        required: true
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Resolve release tag
+        id: tag
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          tag=""
+          if [ "$REF_TYPE" = "tag" ]; then
+            tag="$REF_NAME"
+          elif [ -n "$INPUT_TAG" ]; then
+            tag="$INPUT_TAG"
+          else
+            tag=$(printf '%s\n' "$COMMIT_MESSAGE" | head -n1 | grep -oE '^v[0-9][0-9A-Za-z._-]*' || true)
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: prepare
+    if: needs.prepare.outputs.tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Create release tag before building
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          remote_tag=$(git ls-remote --tags origin "refs/tags/$TAG" | cut -f1)
+          if [ -n "$remote_tag" ]; then
+            git fetch origin "refs/tags/$TAG:refs/tags/$TAG"
+            existing=$(git rev-parse "$TAG^{commit}")
+            if [ "$existing" != "$GITHUB_SHA" ]; then
+              echo "Tag $TAG already points to $existing, not $GITHUB_SHA" >&2
+              exit 1
+            fi
+          else
+            git tag "$TAG" "$GITHUB_SHA"
+            git push origin "refs/tags/$TAG"
+          fi
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # nix bundle includes the full closure, so the asset runs on a plain
+      # system without a binary cache or a local nix store.
+      - name: Build bundled binaries
+        run: |
+          mkdir -p dist
+          nix bundle .#packages.x86_64-linux.nixconnect -o dist/nixconnect
+          cp -L dist/nixconnect dist/nixconnect.bin
+          rm dist/nixconnect
+          nix bundle .#packages.x86_64-linux.nixconnect-daemon -o dist/nixconnect-daemon
+          cp -L dist/nixconnect-daemon dist/nixconnect-daemon.bin
+          rm dist/nixconnect-daemon
+          nix bundle .#packages.x86_64-linux.nixconnect-gui -o dist/nixconnect-gui
+          cp -L dist/nixconnect-gui dist/nixconnect-gui.bin
+          rm dist/nixconnect-gui
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum nixconnect.bin nixconnect-daemon.bin nixconnect-gui.bin > SHA256SUMS
+
+      # The release also publishes a small flake. Add it as an input and use
+      # packages.<system>.nixconnect, .nixconnect-daemon or .nixconnect-gui to
+      # fetch and install the bundles without building them.
+      - name: Generate release flake
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          cli_sha=$(sha256sum dist/nixconnect.bin | cut -d' ' -f1)
+          daemon_sha=$(sha256sum dist/nixconnect-daemon.bin | cut -d' ' -f1)
+          gui_sha=$(sha256sum dist/nixconnect-gui.bin | cut -d' ' -f1)
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          mkdir -p dist/flake
+          cat > dist/flake/flake.nix <<EOF
+          {
+            inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+            outputs = { self, nixpkgs }:
+              let
+                systems = [ "x86_64-linux" ];
+                forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.\${system});
+                mk = { pname, file, hash }: pkgs: pkgs.stdenvNoCC.mkDerivation {
+                  inherit pname;
+                  version = "${TAG}";
+                  src = pkgs.fetchurl {
+                    url = "${base}/\${file}";
+                    sha256 = hash;
+                  };
+                  dontUnpack = true;
+                  dontFixup = true;
+                  installPhase = "install -Dm755 \$src \$out/bin/\${pname}";
+                };
+              in {
+                packages = forAllSystems (pkgs: {
+                  nixconnect = mk { pname = "nixconnect"; file = "nixconnect.bin"; hash = "${cli_sha}"; } pkgs;
+                  nixconnect-daemon = mk { pname = "nixconnect-daemon"; file = "nixconnect-daemon.bin"; hash = "${daemon_sha}"; } pkgs;
+                  nixconnect-gui = mk { pname = "nixconnect-gui"; file = "nixconnect-gui.bin"; hash = "${gui_sha}"; } pkgs;
+                  default = mk { pname = "nixconnect"; file = "nixconnect.bin"; hash = "${cli_sha}"; } pkgs;
+                });
+              };
+          }
+          EOF
+          tar -czf dist/nix-connect-flake.tar.gz -C dist/flake flake.nix
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          files: |
+            dist/nixconnect.bin
+            dist/nixconnect-daemon.bin
+            dist/nixconnect-gui.bin
+            dist/nix-connect-flake.tar.gz
+            dist/SHA256SUMS
+
+      - name: Record binary URL
+        if: needs.prepare.outputs.tag != ''
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          PACKAGES: nixconnect.bin:nixconnect nixconnect-daemon.bin:nixconnect-daemon nixconnect-gui.bin:nixconnect-gui
+        run: |
+          git fetch origin main
+          git checkout -B main origin/main
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          import pathlib
+
+          tag = os.environ["TAG"]
+          version = tag[1:] if tag.startswith("v") else tag
+          base = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/{tag}"
+          mapping = dict(item.split(":") for item in os.environ["PACKAGES"].split())
+          sums = {}
+          for line in pathlib.Path("dist/SHA256SUMS").read_text().splitlines():
+              digest, name = line.split()
+              sums[name] = digest
+          missing = [asset for asset in mapping if asset not in sums]
+          if missing:
+              raise SystemExit(f"missing checksums: {missing}")
+          packages = {}
+          for asset, name in mapping.items():
+              packages[name] = {
+                  "file": asset,
+                  "url": f"{base}/{asset}",
+                  "hash": "sha256-" + base64.b64encode(bytes.fromhex(sums[asset])).decode(),
+              }
+          path = pathlib.Path("binary-url.json")
+          data = json.loads(path.read_text())
+          data["latest"] = tag
+          data["releases"][tag] = {"tag": tag, "version": version, "packages": packages}
+          path.write_text(json.dumps(data, indent=2) + "\n")
+          PY
+          if git diff --quiet -- binary-url.json; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add binary-url.json
+          git commit -m "binary: record $TAG [skip ci]"
+          git push origin main
