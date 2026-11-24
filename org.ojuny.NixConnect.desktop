@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=nix-connect
+Comment=LAN management for NixOS devices
+Exec=nixconnect-gui
+Icon=network-wired
+Terminal=false
+Categories=System;
+Keywords=nix;network;devices;management;
+StartupWMClass=nixconnect-gui

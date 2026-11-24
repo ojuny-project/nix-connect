@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ojuny-project/nix-connect/internal/deploy"
@@ -189,7 +189,14 @@ func (s *Service) RunISO(ctx context.Context, jobID string, request httpapi.ISOR
 	}
 	s.JobManager.AppendLog(jobID, "building deploytarget ISO")
 	flake := "path:" + source + "#nixosConfigurations.deploytarget.config.system.build.isoImage"
-	output, err := s.runner().Run(ctx, source, nil, "nix", "build", "--no-link", "--print-out-paths", "--flake", flake)
+	destination := request.Output
+	if destination == "" {
+		destination = filepath.Join(s.Store.ISODir(), "deploy-target-iso")
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return err
+	}
+	output, err := s.runner().Run(ctx, source, nil, "nix", "build", "-o", destination, "--print-out-paths", flake)
 	if err != nil {
 		return fmt.Errorf("service: build deploytarget ISO: %w: %s", err, output)
 	}
@@ -208,17 +215,13 @@ func (s *Service) RunISO(ctx context.Context, jobID string, request httpapi.ISOR
 	if image == "" {
 		return fmt.Errorf("service: no ISO image in %s", built)
 	}
-	destination := request.Output
-	if destination == "" {
-		destination = filepath.Join(s.Store.ISODir(), "deploytarget-"+s.Store.Identity.ShortID()+".iso")
+	if parent, err := os.Stat(filepath.Dir(destination)); err == nil {
+		if stat, ok := parent.Sys().(*syscall.Stat_t); ok {
+			_ = os.Lchown(destination, int(stat.Uid), int(stat.Gid))
+		}
 	}
-	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
-		return err
-	}
-	if err := copyFile(image, destination, 0o644); err != nil {
-		return err
-	}
-	s.JobManager.AppendLog(jobID, "wrote "+destination)
+	s.JobManager.AppendLog(jobID, "linked "+destination)
+	s.JobManager.AppendLog(jobID, "ISO "+image)
 	return nil
 }
 
@@ -268,23 +271,6 @@ func (s *Service) RunPublish(ctx context.Context, jobID string, request httpapi.
 	}
 	s.JobManager.AppendLog(jobID, "published to "+request.RemoteURL)
 	return nil
-}
-
-func copyFile(source, destination string, mode os.FileMode) error {
-	input, err := os.Open(source)
-	if err != nil {
-		return err
-	}
-	defer input.Close()
-	output, err := os.OpenFile(destination, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(output, input); err != nil {
-		output.Close()
-		return err
-	}
-	return output.Close()
 }
 
 func (s *Service) runInstalled(ctx context.Context, jobID, repository, branch, host, adminKey, mode string, timeout int, magicOverride *bool) error {
@@ -437,7 +423,7 @@ func (s *Service) waitForClosure(ctx context.Context, closure string, timeout ti
 
 func (s *Service) buildPath(ctx context.Context, directory, attribute string) (string, error) {
 	flake := "path:" + directory + "#" + attribute
-	output, err := s.runner().Run(ctx, directory, nil, "nix", "build", "--no-link", "--print-out-paths", "--flake", flake)
+	output, err := s.runner().Run(ctx, directory, nil, "nix", "build", "--no-link", "--print-out-paths", flake)
 	if err != nil {
 		return "", fmt.Errorf("service: build %s: %w: %s", attribute, err, output)
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -44,6 +45,8 @@ type model struct {
 	jobsView    bool
 	jobList     []jobs.Job
 	jobCursor   int
+	width       int
+	height      int
 }
 
 type form struct {
@@ -56,6 +59,9 @@ type form struct {
 type loadedMsg struct {
 	devices []httpapi.Device
 	status  httpapi.Status
+	jobs    []jobs.Job
+	trust   []trust.Record
+	pending []pairing.Request
 	err     error
 }
 
@@ -89,15 +95,33 @@ func load(client *httpapi.Client) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		devices, devicesErr := client.Devices(ctx)
-		status, statusErr := client.Status(ctx)
-		if devicesErr != nil {
-			return loadedMsg{err: devicesErr}
+		devices, err := client.Devices(ctx)
+		if err != nil {
+			return loadedMsg{err: err}
 		}
-		if statusErr != nil {
-			return loadedMsg{err: statusErr}
+		status, err := client.Status(ctx)
+		if err != nil {
+			return loadedMsg{err: err}
 		}
-		return loadedMsg{devices: devices, status: status}
+		jobList, err := client.Jobs(ctx)
+		if err != nil {
+			return loadedMsg{err: err}
+		}
+		records, err := client.TrustRecords(ctx)
+		if err != nil {
+			return loadedMsg{err: err}
+		}
+		pending, err := client.PairPending(ctx)
+		if err != nil {
+			return loadedMsg{err: err}
+		}
+		return loadedMsg{
+			devices: devices,
+			status:  status,
+			jobs:    jobList,
+			trust:   records,
+			pending: pending,
+		}
 	}
 }
 
@@ -209,8 +233,12 @@ func newForm(kind string) *form {
 		"register":   {"flake URL", "branch", "host", "account", "password"},
 		"unregister": {"password"},
 		"publish":    {"new remote", "branch", "password"},
+		"iso":        {"output link"},
 	}[kind]
 	values := make([]string, len(labels))
+	if kind == "iso" {
+		values[0] = "deploy-target-iso"
+	}
 	if kind == "deploy" || kind == "register" {
 		for index, label := range labels {
 			switch label {
@@ -247,10 +275,22 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case loadedMsg:
 		m.devices = message.devices
 		m.status = message.status
+		m.jobList = message.jobs
+		m.trust = message.trust
+		m.pending = message.pending
 		m.err = message.err
 		if m.cursor >= len(m.devices) && len(m.devices) > 0 {
 			m.cursor = len(m.devices) - 1
 		}
+		if m.jobCursor >= len(m.jobList) && len(m.jobList) > 0 {
+			m.jobCursor = len(m.jobList) - 1
+		}
+		if m.trustCursor >= len(m.pending)+len(m.trust) && len(m.pending)+len(m.trust) > 0 {
+			m.trustCursor = len(m.pending) + len(m.trust) - 1
+		}
+	case tea.WindowSizeMsg:
+		m.width = message.Width
+		m.height = message.Height
 	case trustMsg:
 		m.trust = message.records
 		m.pending = message.pending
@@ -361,6 +401,9 @@ func (m model) updateList(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "p":
 		m.confirm = ""
 		m.form = newForm("publish")
+	case "I":
+		m.confirm = ""
+		m.form = newForm("iso")
 	case "P":
 		m.confirm = ""
 		device, ok := m.selected()
@@ -540,6 +583,30 @@ func (m model) updateForm(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) submitForm() (tea.Model, tea.Cmd) {
+	if m.form.kind == "iso" {
+		output := m.form.values[0]
+		if output == "" {
+			output = "deploy-target-iso"
+		}
+		destination, err := filepath.Abs(output)
+		if err != nil {
+			m.err = err
+			m.form = nil
+			return m, nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		job, err := m.client.BuildISO(ctx, httpapi.ISORequest{Output: destination})
+		m.form = nil
+		if err != nil {
+			m.err = err
+			return m, nil
+		}
+		m.err = nil
+		return m, func() tea.Msg {
+			return actionMsg{message: "job " + job + " -> " + destination}
+		}
+	}
 	device, ok := m.selected()
 	if !ok {
 		m.err = fmt.Errorf("select a device first")
@@ -591,90 +658,16 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	if m.jobsView {
-		return m.viewJobs()
+	switch {
+	case m.form != nil:
+		return m.viewFormScreen()
+	case m.trustView:
+		return m.viewTrustScreen()
+	case m.jobsView:
+		return m.viewJobsScreen()
+	default:
+		return m.viewHome()
 	}
-	if m.trustView {
-		return m.viewTrust()
-	}
-	if m.form != nil {
-		return m.viewForm()
-	}
-	var builder strings.Builder
-	builder.WriteString(titleStyle.Render("nix-connect"))
-	builder.WriteString("  ")
-	if m.status.Hostname != "" {
-		builder.WriteString(fmt.Sprintf("%s  %s", m.status.Hostname, dimStyle.Render(m.status.ShortID)))
-	}
-	builder.WriteString("\n\n")
-
-	if m.err != nil {
-		builder.WriteString(errorStyle.Render(m.err.Error()))
-		builder.WriteString("\n\n")
-	}
-	if m.message != "" {
-		builder.WriteString(activeStyle.Render(m.message))
-		builder.WriteString("\n\n")
-	}
-	if len(m.devices) == 0 {
-		builder.WriteString(dimStyle.Render("No devices discovered yet. Press r to scan."))
-		builder.WriteString("\n")
-	}
-	for index, device := range m.devices {
-		cursor := "  "
-		if index == m.cursor {
-			cursor = "> "
-		}
-		state := "unpaired"
-		if device.Paired {
-			state = activeStyle.Render("paired")
-		}
-		if device.Self {
-			state = "self"
-		}
-		address := device.Address
-		if address == "" {
-			address = "-"
-		}
-		kind := device.Kind
-		if kind == "" {
-			kind = "unknown"
-		}
-		builder.WriteString(fmt.Sprintf("%s%-18s %-22s %-10s %-9s %s\n",
-			cursor,
-			truncate(device.Hostname, 18),
-			truncate(device.ID, 22),
-			truncate(address, 10),
-			kind,
-			state,
-		))
-	}
-	if m.detail && len(m.devices) > 0 {
-		device := m.devices[m.cursor]
-		builder.WriteString("\n")
-		builder.WriteString(titleStyle.Render("Device"))
-		builder.WriteString("\n")
-		builder.WriteString(fmt.Sprintf("id:         %s\n", device.ID))
-		builder.WriteString(fmt.Sprintf("hostname:   %s\n", device.Hostname))
-		builder.WriteString(fmt.Sprintf("address:    %s\n", device.Address))
-		builder.WriteString(fmt.Sprintf("kind:       %s\n", device.Kind))
-		builder.WriteString(fmt.Sprintf("ssh port:   %d\n", device.SSHPort))
-		builder.WriteString(fmt.Sprintf("registered: %t\n", device.Registered))
-		builder.WriteString(fmt.Sprintf("paired:     %t\n", device.Paired))
-	}
-	builder.WriteString("\n")
-	builder.WriteString(dimStyle.Render("d deploy  u update  n register  x unregister  p publish  P pair  s ssh"))
-	builder.WriteString("\n")
-	builder.WriteString(dimStyle.Render("t trust  J jobs  R reset registration  K rotate key  S share key"))
-	builder.WriteString("\n")
-	builder.WriteString(dimStyle.Render("r refresh   enter details   q quit"))
-	builder.WriteString("\n")
-	if m.status.Registration.Registered() {
-		builder.WriteString(dimStyle.Render(fmt.Sprintf("registered: %s#%s",
-			m.status.Registration.Repository, m.status.Registration.Host)))
-		builder.WriteString("\n")
-	}
-	return builder.String()
 }
 
 func (m model) viewJobs() string {

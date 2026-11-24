@@ -188,8 +188,11 @@ func TestRunMutationCommands(t *testing.T) {
 	if output, err := runCLI(t, socket, "publish", "--remote", "https://example.invalid/new", "--branch", "main"); err != nil || !strings.Contains(output, "publish-job") {
 		t.Fatalf("publish: %q %v", output, err)
 	}
-	if output, err := runCLI(t, socket, "iso", "deploytarget"); err != nil || !strings.Contains(output, "iso-job") {
-		t.Fatalf("iso: %q %v", output, err)
+	if output, err := runCLI(t, socket, "build-iso"); err != nil || !strings.Contains(output, "iso-job") {
+		t.Fatalf("build-iso: %q %v", output, err)
+	}
+	if output, err := runCLI(t, socket, "build-iso", "-o", "/tmp/nix-connect-test.iso"); err != nil || !strings.Contains(output, "/tmp/nix-connect-test.iso") {
+		t.Fatalf("build-iso output: %q %v", output, err)
 	}
 	if output, err := runCLI(t, socket, "confirm", "job"); err != nil {
 		t.Fatalf("confirm: %q %v", output, err)
@@ -244,6 +247,12 @@ func TestRunHelpAndUnknown(t *testing.T) {
 	output, err := runCLI(t, filepath.Join(t.TempDir(), "missing.sock"), "help")
 	if err != nil || !strings.Contains(output, "Commands:") {
 		t.Fatalf("help: %q %v", output, err)
+	}
+	if err := Run([]string{"--help"}); err != nil {
+		t.Fatalf("--help: %v", err)
+	}
+	if err := Run([]string{"-h"}); err != nil {
+		t.Fatalf("-h: %v", err)
 	}
 	if _, err := runCLI(t, filepath.Join(t.TempDir(), "missing.sock"), "unknown"); err == nil {
 		t.Fatal("unknown command was accepted")

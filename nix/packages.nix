@@ -91,6 +91,10 @@ in
       pkgs.gtk4
       pkgs.libadwaita
     ];
+    postInstall = ''
+      install -Dm644 ${../org.ojuny.NixConnect.desktop} \
+        $out/share/applications/org.ojuny.NixConnect.desktop
+    '';
     postFixup = wrapRuntime;
   });
 

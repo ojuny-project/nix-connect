@@ -31,7 +31,7 @@ func (i *Install) Build(ctx context.Context, dir, host string) (string, error) {
 		nix = "nix"
 	}
 	flake := fmt.Sprintf("path:%s#nixosConfigurations.%s.config.system.build.toplevel", dir, host)
-	output, err := i.Runner.Run(ctx, dir, nil, nix, "build", "--no-link", "--print-out-paths", "--flake", flake)
+	output, err := i.Runner.Run(ctx, dir, nil, nix, "build", "--no-link", "--print-out-paths", flake)
 	if err != nil {
 		return "", fmt.Errorf("deploy: build: %w: %s", err, output)
 	}

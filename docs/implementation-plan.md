@@ -342,12 +342,15 @@ disabled and is available in the CLI, TUI and GUI.
 
 ## Deploytarget ISO job
 
-`nixconnect iso deploytarget` runs the ISO build as a job. It copies the
-installed `nixconnect-source`, writes `prepaired.json` with the administration
-identity fingerprint, identity public key and SSH public key, and builds
+`nixconnect build-iso` runs the ISO build as a job. It copies the installed
+`nixconnect-source`, writes `prepaired.json` with the administration identity
+fingerprint, identity public key and SSH public key, and builds
 `nixosConfigurations.deploytarget.config.system.build.isoImage` from the copy.
-The image is written to `/var/lib/nix-connect/iso`. The same expression builds
-the generic image directly from the flake.
+The build uses `nix build -o <out-link>`, so the result is a Nix out-link that
+points to the result directory containing `iso/deploytarget-<short-id>.iso`. The
+default out-link is `deploy-target-iso` in the caller's current directory;
+`--output PATH` or `-o PATH` overrides it. The daemon does not copy the image.
+The same expression builds the generic image directly from the flake.
 
 Remote jobs are recorded in `remote_jobs.json` on the administration device and
 combined with local jobs in the job list.

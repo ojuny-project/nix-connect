@@ -188,7 +188,7 @@ GUI launches a terminal emulator with the same parameters.
 - `ncon register <id>`
 - `ncon unregister <id>`
 - `ncon publish`
-- `ncon iso deploytarget`
+- `ncon build-iso`
 - `ncon pair`
 - `ncon key share`
 - `ncon jobs`

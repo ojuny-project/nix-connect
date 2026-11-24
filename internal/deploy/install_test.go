@@ -26,7 +26,7 @@ func (f *fakeRunner) Run(_ context.Context, _ string, _ []string, name string, a
 
 func TestInstallCommands(t *testing.T) {
 	runner := &fakeRunner{outputs: map[string]string{
-		"nix build --no-link --print-out-paths --flake path:/work#nixosConfigurations.host.config.system.build.toplevel": "/nix/store/abc-system\n",
+		"nix build --no-link --print-out-paths path:/work#nixosConfigurations.host.config.system.build.toplevel": "/nix/store/abc-system\n",
 	}}
 	install := &Install{Runner: runner}
 	ctx := context.Background()

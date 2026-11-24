@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -22,8 +23,14 @@ const DefaultSocket = "/run/nix-connect/control.sock"
 func Run(args []string) error {
 	global := flag.NewFlagSet("nixconnect", flag.ContinueOnError)
 	global.SetOutput(os.Stderr)
+	global.Usage = func() {
+		usage(os.Stderr)
+	}
 	socket := global.String("socket", DefaultSocket, "local control socket")
 	if err := global.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	rest := global.Args()
@@ -63,12 +70,12 @@ func Run(args []string) error {
 		return deploy(ctx, client, arguments, true)
 	case "publish":
 		return publish(ctx, client, arguments)
+	case "build-iso":
+		return buildISO(ctx, client, arguments)
 	case "reset":
 		return client.ResetRegistration(ctx)
 	case "trust":
 		return trustCommand(ctx, client, arguments)
-	case "iso":
-		return iso(ctx, client, arguments)
 	case "pair":
 		return pair(ctx, client, arguments)
 	case "key":
@@ -101,7 +108,7 @@ Commands:
   reset                     reset the registration to no-commit
   trust list                list paired devices
   trust revoke <id>         revoke a paired device
-  iso deploytarget          build a deploytarget ISO
+  build-iso [--output PATH] build a deploytarget ISO out-link
   pair start <id> [key]     start pairing
   pair pending              list pending pairing requests
   pair confirm <id> <code>  confirm pairing
@@ -324,15 +331,27 @@ func trustCommand(ctx context.Context, client *httpapi.Client, args []string) er
 	}
 }
 
-func iso(ctx context.Context, client *httpapi.Client, args []string) error {
-	if len(args) != 1 || args[0] != "deploytarget" {
-		return errors.New("nixconnect: iso deploytarget")
+func buildISO(ctx context.Context, client *httpapi.Client, args []string) error {
+	set := flag.NewFlagSet("build-iso", flag.ContinueOnError)
+	output := "deploy-target-iso"
+	set.StringVar(&output, "o", output, "output link path")
+	set.StringVar(&output, "output", output, "output link path")
+	if err := set.Parse(args); err != nil {
+		return err
 	}
-	job, err := client.BuildISO(ctx, httpapi.ISORequest{})
+	if set.NArg() != 0 {
+		return errors.New("nixconnect: build-iso [--output PATH]")
+	}
+	destination, err := filepath.Abs(output)
+	if err != nil {
+		return err
+	}
+	job, err := client.BuildISO(ctx, httpapi.ISORequest{Output: destination})
 	if err != nil {
 		return err
 	}
 	fmt.Println(job)
+	fmt.Println(destination)
 	return nil
 }
 

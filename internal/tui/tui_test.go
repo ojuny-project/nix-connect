@@ -283,6 +283,62 @@ func TestJobsViewAndConfirmation(t *testing.T) {
 	}
 }
 
+func TestWindowSizeAndAdaptiveLayout(t *testing.T) {
+	value := sampleModel()
+	updated, _ := value.Update(tea.WindowSizeMsg{Width: 60, Height: 24})
+	value = updated.(model)
+	if value.width != 60 || value.height != 24 {
+		t.Fatalf("window size was not stored: %dx%d", value.width, value.height)
+	}
+	narrow := value.View()
+	if !strings.Contains(narrow, "Actions") || !strings.Contains(narrow, "I build ISO") {
+		t.Fatalf("narrow view is missing actions:\n%s", narrow)
+	}
+	value.width = 140
+	value.height = 40
+	wide := value.View()
+	if !strings.Contains(wide, "Devices") || !strings.Contains(wide, "Status") || !strings.Contains(wide, "Actions") {
+		t.Fatalf("wide view is missing panels:\n%s", wide)
+	}
+}
+
+func TestDashboardCountsAndEmptyPeers(t *testing.T) {
+	value := sampleModel()
+	value.devices = value.devices[:1]
+	value.jobList = []jobs.Job{{
+		ID:      "job-1",
+		Kind:    jobs.KindUpdate,
+		State:   jobs.StateActivating,
+		Target:  "peer",
+		Updated: time.Now(),
+	}}
+	value.trust = []trust.Record{{Fingerprint: "peer-fingerprint"}}
+	value.pending = []pairing.Request{{ID: "pair-1", Code: "123456"}}
+	view := value.View()
+	if !strings.Contains(view, "No peers discovered yet. This device only.") {
+		t.Fatalf("empty peer state is missing:\n%s", view)
+	}
+	if !strings.Contains(view, "1 (1 active)") || !strings.Contains(view, "Trusted") {
+		t.Fatalf("dashboard counts are missing:\n%s", view)
+	}
+}
+
+func TestISOForm(t *testing.T) {
+	value := sampleModel()
+	updated, _ := value.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("I")})
+	value = updated.(model)
+	if value.form == nil || value.form.kind != "iso" {
+		t.Fatalf("ISO form was not opened: %+v", value.form)
+	}
+	if value.form.values[0] != "deploy-target-iso" {
+		t.Fatalf("unexpected ISO default: %q", value.form.values[0])
+	}
+	view := value.View()
+	if !strings.Contains(view, "ISO") || !strings.Contains(view, "output link") {
+		t.Fatalf("ISO form view is missing fields:\n%s", view)
+	}
+}
+
 func TestTruncate(t *testing.T) {
 	if truncate("short", 10) != "short" {
 		t.Fatal("short value changed")

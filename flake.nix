@@ -125,7 +125,10 @@
       apps = forAllSystems (pkgs: {
         default = {
           type = "app";
-          program = "${self.packages.${pkgs.system}.nixconnect}/bin/nixconnect";
+          program = "${self.packages.${pkgs.stdenv.hostPlatform.system}.nixconnect}/bin/nixconnect";
+          meta = {
+            description = "nix-connect CLI and TUI";
+          };
         };
         ci = {
           type = "app";
@@ -138,6 +141,9 @@
               '';
             }
           }/bin/ci";
+          meta = {
+            description = "Run the nix-connect flake checks";
+          };
         };
       });
 
