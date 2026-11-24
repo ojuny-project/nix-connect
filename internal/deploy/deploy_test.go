@@ -81,7 +81,6 @@ func TestWrapperContainsTargetSettings(t *testing.T) {
 		Host:         "workstation",
 		System:       "x86_64-linux",
 		Account:      "alice",
-		AdminKey:     "ssh-ed25519 AAAA",
 		DiskDevice:   "/dev/disk/by-id/disk",
 		FirmwareEFI:  true,
 		IncludeDisko: true,
@@ -105,7 +104,6 @@ func TestWriteWrapper(t *testing.T) {
 		Host:         "host",
 		System:       "x86_64-linux",
 		Account:      "alice",
-		AdminKey:     "ssh-ed25519 AAAA",
 		DiskDevice:   "/dev/sda",
 		FirmwareEFI:  true,
 		IncludeDisko: true,
@@ -113,10 +111,13 @@ func TestWriteWrapper(t *testing.T) {
 	if err := WriteWrapper(dir, spec, true); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"flake.nix", "disko.nix", "admin-key.nix"} {
+	for _, name := range []string{"flake.nix", "disko.nix"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "admin-key.nix")); !os.IsNotExist(err) {
+		t.Fatal("install wrapper wrote an administrator key module")
 	}
 }
 

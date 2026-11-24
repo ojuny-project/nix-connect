@@ -200,6 +200,12 @@ in
       default = "";
       description = "Administration SSH public key installed for the initial account.";
     };
+
+    adminAuthorizedKeyFile = lib.mkOption {
+      type = lib.types.str;
+      default = "${cfg.stateDir}/admin_ssh.pub";
+      description = "File containing the administration SSH public key authorized for the initial account.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -230,8 +236,18 @@ EOF
 
     users.users = lib.genAttrs (lib.unique (cfg.members ++ [ cfg.initialAccount ])) (name: {
       extraGroups = [ "nix-connect" ];
-      openssh.authorizedKeys.keys =
-        lib.optional (name == cfg.initialAccount && cfg.adminAuthorizedKey != "") cfg.adminAuthorizedKey;
+      openssh.authorizedKeys.keys = lib.filter (key: key != "") (
+        lib.unique (
+          lib.optional (name == cfg.initialAccount && cfg.adminAuthorizedKey != "") cfg.adminAuthorizedKey
+          ++ lib.optional
+            (
+              name == cfg.initialAccount
+              && cfg.adminAuthorizedKeyFile != ""
+              && builtins.pathExists cfg.adminAuthorizedKeyFile
+            )
+            (lib.trim (builtins.readFile cfg.adminAuthorizedKeyFile))
+        )
+      );
     });
 
     networking.firewall = lib.mkIf cfg.openFirewall {

@@ -223,7 +223,53 @@ func TestUpdateWrapperHasNoDisko(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(directory, "disko.nix")); !os.IsNotExist(err) {
 		t.Fatal("update wrapper wrote a disko module")
 	}
-	if _, err := os.Stat(filepath.Join(directory, "admin-key.nix")); err != nil {
+	if _, err := os.Stat(filepath.Join(directory, "admin-key.nix")); !os.IsNotExist(err) {
+		t.Fatal("update wrapper wrote an administrator key module")
+	}
+}
+
+func TestAuthorizeKeyWritesAccountFile(t *testing.T) {
+	root := t.TempDir()
+	install := &Install{}
+	if err := install.AuthorizeKey(root, "alice", "ssh-ed25519 AAAA"); err != nil {
 		t.Fatal(err)
+	}
+	path := filepath.Join(root, "etc", "ssh", "authorized_keys.d", "alice")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "ssh-ed25519 AAAA\n" {
+		t.Fatalf("unexpected authorized keys %q", data)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o644 {
+		t.Fatalf("unexpected authorized keys mode %o", info.Mode().Perm())
+	}
+	if err := install.AuthorizeKey(root, "alice", "ssh-ed25519 AAAA"); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(data), "ssh-ed25519 AAAA") != 1 {
+		t.Fatalf("duplicate administration key %q", data)
+	}
+	if err := os.WriteFile(path, []byte("ssh-ed25519 EXISTING\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := install.AuthorizeKey(root, "alice", "ssh-ed25519 AAAA"); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "ssh-ed25519 EXISTING") || !strings.Contains(string(data), "ssh-ed25519 AAAA") {
+		t.Fatalf("existing key was lost: %q", data)
 	}
 }

@@ -129,6 +129,20 @@ func TestAdministrationKeyPermissionsAndFormats(t *testing.T) {
 	if !strings.HasPrefix(authorized, "ssh-ed25519 ") {
 		t.Fatalf("unexpected authorized key %q", authorized)
 	}
+	publicData, err := os.ReadFile(filepath.Join(directory, AdminPublicKeyFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(publicData)) != authorized {
+		t.Fatalf("public key file does not match the authorized key: %q", publicData)
+	}
+	publicInfo, err := os.Stat(filepath.Join(directory, AdminPublicKeyFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if publicInfo.Mode().Perm() != 0o644 {
+		t.Fatalf("unexpected public key mode %o", publicInfo.Mode().Perm())
+	}
 	pem, err := store.AdminKeyPEM()
 	if err != nil {
 		t.Fatal(err)
@@ -164,6 +178,13 @@ func TestRotateAdministrationKey(t *testing.T) {
 	}
 	if after == before {
 		t.Fatal("authorized key did not change")
+	}
+	publicData, err := os.ReadFile(filepath.Join(directory, AdminPublicKeyFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(publicData)) != after {
+		t.Fatalf("public key file was not rotated: %q", publicData)
 	}
 	reopened, err := Open(directory)
 	if err != nil {

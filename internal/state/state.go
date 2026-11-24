@@ -21,12 +21,13 @@ import (
 )
 
 const (
-	ConfigFile       = "config.json"
-	RegistrationFile = "registration.json"
-	TrustFile        = "trust.json"
-	AdminKeyFile     = "admin_ssh.key"
-	JobsDir          = "jobs"
-	ISOdir           = "iso"
+	ConfigFile         = "config.json"
+	RegistrationFile   = "registration.json"
+	TrustFile          = "trust.json"
+	AdminKeyFile       = "admin_ssh.key"
+	AdminPublicKeyFile = "admin_ssh.pub"
+	JobsDir            = "jobs"
+	ISOdir             = "iso"
 )
 
 type DiscoveryConfig struct {
@@ -163,6 +164,16 @@ func Open(dir string) (*Store, error) {
 	if err := store.loadAdminKey(); err != nil {
 		return nil, err
 	}
+	if store.Config.AdminAuthorizedKey == "" {
+		key, err := store.AdminAuthorizedKey()
+		if err != nil {
+			return nil, err
+		}
+		store.Config.AdminAuthorizedKey = key
+		if err := store.SaveConfig(); err != nil {
+			return nil, err
+		}
+	}
 	if err := store.loadRegistration(); err != nil {
 		return nil, err
 	}
@@ -192,7 +203,14 @@ func (s *Store) loadConfig() error {
 func (s *Store) SaveConfig() error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	return writeJSON(filepath.Join(s.Dir, ConfigFile), s.Config, 0o600)
+	if err := writeJSON(filepath.Join(s.Dir, ConfigFile), s.Config, 0o600); err != nil {
+		return err
+	}
+	if s.Config.AdminAuthorizedKey == "" {
+		return nil
+	}
+	publicKey := strings.TrimSpace(s.Config.AdminAuthorizedKey)
+	return writeFile(filepath.Join(s.Dir, AdminPublicKeyFile), []byte(publicKey+"\n"), 0o644)
 }
 
 func (s *Store) loadAdminKey() error {
@@ -222,16 +240,7 @@ func (s *Store) loadAdminKey() error {
 	if err != nil {
 		return err
 	}
-	der, err := x509.MarshalPKCS8PrivateKey(private)
-	if err != nil {
-		return err
-	}
-	block := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
-	if err := writeFile(path, block, 0o400); err != nil {
-		return err
-	}
-	s.AdminKey = private
-	return nil
+	return s.SetAdminKey(private)
 }
 
 func (s *Store) AdminSigner() (ssh.Signer, error) {
@@ -280,8 +289,19 @@ func (s *Store) SetAdminKey(private ed25519.PrivateKey) error {
 	if err := writeFile(filepath.Join(s.Dir, AdminKeyFile), block, 0o400); err != nil {
 		return err
 	}
+	if err := s.writeAdminPublicKey(private); err != nil {
+		return err
+	}
 	s.AdminKey = private
 	return nil
+}
+
+func (s *Store) writeAdminPublicKey(private ed25519.PrivateKey) error {
+	authorized, err := adminAuthorizedKey(private)
+	if err != nil {
+		return err
+	}
+	return writeFile(filepath.Join(s.Dir, AdminPublicKeyFile), []byte(authorized+"\n"), 0o644)
 }
 
 func ParseAdminKeyPEM(data []byte) (ed25519.PrivateKey, error) {

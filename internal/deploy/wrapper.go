@@ -11,7 +11,6 @@ type WrapperSpec struct {
 	Host         string
 	System       string
 	Account      string
-	AdminKey     string
 	DiskDevice   string
 	FirmwareEFI  bool
 	IncludeDisko bool
@@ -34,7 +33,6 @@ func InstallWrapper(spec WrapperSpec) string {
     let
       configuration = target.nixosConfigurations.%q.extendModules {
         modules = [%s
-          ./admin-key.nix
         ];
       };
     in {
@@ -134,18 +132,6 @@ func DiskoModule(spec WrapperSpec) string {
 `, spec.DiskDevice, spec.FirmwareEFI, spec.FirmwareEFI, !spec.FirmwareEFI, !spec.FirmwareEFI, spec.DiskDevice, spec.FirmwareEFI, spec.FirmwareEFI)
 }
 
-func AdminKeyModule(spec WrapperSpec) string {
-	return fmt.Sprintf(`{ ... }:
-{
-  users.users.%q = {
-    isNormalUser = true;
-    extraGroups = [ "wheel" ];
-    openssh.authorizedKeys.keys = [ %q ];
-  };
-}
-`, spec.Account, spec.AdminKey)
-}
-
 func WriteWrapper(dir string, spec WrapperSpec, install bool) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -155,8 +141,7 @@ func WriteWrapper(dir string, spec WrapperSpec, install bool) error {
 		flake = InstallWrapper(spec)
 	}
 	files := map[string]string{
-		"flake.nix":     flake,
-		"admin-key.nix": AdminKeyModule(spec),
+		"flake.nix": flake,
 	}
 	if install && spec.IncludeDisko {
 		files["disko.nix"] = DiskoModule(spec)

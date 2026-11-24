@@ -67,7 +67,6 @@ func (s *Service) runLiveDeploy(ctx context.Context, jobID string, request httpa
 		Host:         request.Host,
 		System:       "x86_64-linux",
 		Account:      account,
-		AdminKey:     adminKey,
 		DiskDevice:   request.Disk,
 		FirmwareEFI:  request.Firmware != "bios",
 		IncludeDisko: true,
@@ -90,6 +89,13 @@ func (s *Service) runLiveDeploy(ctx context.Context, jobID string, request httpa
 	if err := install.Install(ctx, jobDirectory, request.Host); err != nil {
 		return err
 	}
+	root := s.InstallRoot
+	if root == "" {
+		root = "/mnt"
+	}
+	if err := install.AuthorizeKey(root, account, adminKey); err != nil {
+		return err
+	}
 	s.Store.Config.Kind = "installed"
 	s.Store.Config.Account = account
 	s.Store.Config.SSHUser = account
@@ -103,10 +109,6 @@ func (s *Service) runLiveDeploy(ctx context.Context, jobID string, request httpa
 	s.Store.Registration.Apply(request.Repository, request.Branch, request.Host, true, "", closure)
 	if err := s.Store.SaveRegistration(); err != nil {
 		return err
-	}
-	root := s.InstallRoot
-	if root == "" {
-		root = "/mnt"
 	}
 	if targetURL != request.Repository {
 		home := filepath.Join(root, "home", account, "repos", "nix-flake")
@@ -297,7 +299,6 @@ func (s *Service) runInstalled(ctx context.Context, jobID, repository, branch, h
 		Host:         host,
 		System:       "x86_64-linux",
 		Account:      account,
-		AdminKey:     adminKey,
 		IncludeDisko: false,
 	}
 	if err := deploy.WriteWrapper(jobDirectory, spec, false); err != nil {

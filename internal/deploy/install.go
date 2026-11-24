@@ -2,10 +2,12 @@ package deploy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Install struct {
@@ -65,6 +67,33 @@ func (i *Install) Install(ctx context.Context, dir, host string) error {
 	return nil
 }
 
+func (i *Install) AuthorizeKey(root, account, key string) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return errors.New("deploy: administration key is empty")
+	}
+	directory := filepath.Join(root, "etc", "ssh", "authorized_keys.d")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		return err
+	}
+	path := filepath.Join(directory, account)
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == key {
+			return nil
+		}
+	}
+	content := string(data)
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	content += key + "\n"
+	return os.WriteFile(path, []byte(content), 0o644)
+}
+
 func StageTree(sourceDir, destinationDir string) error {
 	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -89,6 +118,7 @@ func StageState(sourceDir, destinationDir, jobID string) error {
 		"registration.json",
 		"trust.json",
 		"config.json",
+		"admin_ssh.pub",
 	}
 	for _, relative := range files {
 		source := filepath.Join(sourceDir, relative)

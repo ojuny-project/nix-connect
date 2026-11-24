@@ -193,15 +193,24 @@ Files:
 
 - `cmd/nixconnect-gui/main.go`
 - `internal/gui/gui.go`
+- `internal/gui/model.go`
+- `internal/gui/dialogs.go`
+- `internal/gui/style.go`
 
 Work:
 
-1. Open a GTK4 window with the device list.
-2. Add actions for info, SSH, deploy, update, register and unregister.
-3. Show job state and the manual magic rollback confirmation.
-4. Reuse the same client package as the TUI.
+1. Open a GTK4 window with a header bar, a device table, a status/detail panel and
+   grouped Manage, Connect and System actions.
+2. Add tooltips, keyboard accelerators and empty states.
+3. Add typed dialogs for deploy, update, register, unregister and publish.
+4. Show jobs with phase, error and confirmation deadline, and refresh while the
+   dialog is open.
+5. Show pending pairings and trusted devices with confirm and revoke.
+6. Build the deploytarget ISO from an output-link dialog.
+7. Reuse the same client package as the TUI.
 
-Verification: cgo build succeeds in the devshell.
+Verification: cgo build succeeds in the devshell and `go test ./internal/gui`
+passes.
 
 ## Phase 8: NixOS module and ISO
 
@@ -301,10 +310,12 @@ Deploy:
   the template preparation, builds from the prepared tree and stages that tree
   into the target home at `repos/nix-flake`; otherwise the flake is deployed
   as-is
-- the target daemon builds a wrapper flake with disko, the bootloader and the
-  administration SSH key, runs disko and nixos-install locally, stages the
-  identity, trust, config, registration and job record into the new root, marks
-  the job succeeded and reboots
+- the target daemon builds a wrapper flake with disko and the bootloader, runs
+  disko and nixos-install locally, writes the administration public key to
+  `<root>/etc/ssh/authorized_keys.d/<account>` and
+  `<root>/var/lib/nix-connect/admin_ssh.pub`, stages the identity, trust, config,
+  registration, key file and job record into the new root, marks the job
+  succeeded and reboots
 - the installed system returns as the same device with the same registration
 
 Update:

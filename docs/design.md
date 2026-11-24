@@ -65,7 +65,7 @@ produces.
 - systemd on every device.
 - x86_64-linux for the deploytarget ISO.
 - Go for the daemon and both frontends.
-- GTK4 and libadwaita for the graphical client.
+- GTK4 for the graphical client.
 - A live target needs enough memory for the live environment and a target disk
   larger than 8 GiB.
 
@@ -159,7 +159,7 @@ Three independently installable packages:
   deploytarget ISO build.
 - `nixconnect`: the CLI. Running it with no arguments opens the TUI. A second
   symlink named `ncon` points at the same binary.
-- `nixconnect-gui`: the graphical client, Go with GTK4 and libadwaita.
+- `nixconnect-gui`: the graphical client, Go with GTK4.
 
 The frontends are clients of the daemon and require it at runtime. A server may
 install only the daemon. An administration laptop installs the daemon plus one
@@ -196,6 +196,19 @@ GUI launches a terminal emulator with the same parameters.
 Every command has a GUI equivalent. Mutating commands require the consent gate,
 and the non-interactive form requires `--yes` where a confirmation would
 otherwise be shown.
+
+### 6.2 GUI surface
+
+The GUI is a GTK4 client over the same control API. The window has a header bar
+with the local identity and daemon state, a device table with HOST, ID, ADDRESS,
+KIND and STATE columns, and a status panel that shows either the local device or
+the selected device. The actions are grouped as Manage, Connect and System.
+Every action has a tooltip and a keyboard accelerator. Jobs, trust and the
+deploytarget ISO use dedicated dialogs. The jobs dialog refreshes while it is
+open and shows the phase, error and confirmation deadline of the selected job.
+The trust dialog shows pending pairings and trusted devices with confirm and
+revoke actions. The ISO dialog accepts an output link and explains that the link
+points to `iso/<image>.iso`.
 
 ## 7. Planes and ports
 
@@ -235,9 +248,18 @@ first administration device and distributed by pairing. It is stored at mode
 private key never appears on a command line, in an environment variable, or in
 the Nix store.
 
-A target provisioned by nix-connect receives the public key during install. A
-device installed outside nix-connect must already authorize the public key;
-nix-connect does not add it to a foreign device.
+The authorized public key is written to `<stateDir>/admin_ssh.pub`. The NixOS
+module option `adminAuthorizedKeyFile` defaults to that path and authorizes it
+for the initial account when the file exists. The daemon writes the file when it
+generates, rotates or imports the key, and `SaveConfig` rewrites it from
+`Config.AdminAuthorizedKey`. The file lives outside every flake, so a template
+can import it without embedding the key or generating a user module.
+
+A target provisioned by nix-connect receives the public key after install in
+`/etc/ssh/authorized_keys.d/<account>` and in `<stateDir>/admin_ssh.pub`. A
+template that imports the file keeps the key across rebuilds. A device installed
+outside nix-connect must already authorize the public key; nix-connect does not
+add it to a foreign device.
 
 The shared key has one consequence: revocation is per key, not per administration
 device. Rotating it is a manual operation that must update every target. This is
@@ -699,10 +721,11 @@ flake:
 
 - The remote flake is an input.
 - The wrapper exposes `nixosConfigurations.<name>` by extending the target
-  configuration with a generated disko and bootloader module and the
-  administrator's public key.
+  configuration with a generated disko and bootloader module.
 - The wrapper also exposes `deploy.nodes.<name>` for deploy-rs.
 - The wrapper is never pushed.
+- The wrapper does not generate a user module and does not set
+  `users.users.<account>`.
 
 The installed system is system-only. There is no Ojuny flake in the home and no
 generated user module. A generic flake that wants to stay managed must include
@@ -722,9 +745,13 @@ A generic install registers the remote flake as `pushed`, because the remote is
 the source of the configuration and the installation wrapper is not part of it.
 Updates are allowed subject to the preflight.
 
-The administrator public key is injected at install time. If the user's flake
-does not manage that key afterwards, a later update can remove SSH access. The
-design recommends that the flake manage the key, and documents the consequence.
+The administrator public key is written after `nixos-install` to
+`/etc/ssh/authorized_keys.d/<account>` and to
+`<root>/var/lib/nix-connect/admin_ssh.pub`. A template that imports the file
+keeps the key across rebuilds. If the user's flake does not import the file, a
+later rebuild can replace the authorized keys file and remove SSH access. The
+design recommends that the flake import the key file, and documents the
+consequence.
 
 ## 18. Deploytarget ISO
 
@@ -981,8 +1008,8 @@ documented shape rules. The CI gate in section 22.3 enforces it.
     requires an administration device for the confirmation window.
 15. The ISO is x86_64-linux only.
 16. Wi-Fi on a target requires `nmtui`.
-17. The administrator SSH key is injected at install. On a generic flake that
-    does not manage it, a later update can remove it.
+17. The administrator SSH key is written after install. A template that does not
+    import the key file can lose SSH access on the next rebuild.
 18. The ISO is per administration device and is invalidated by key rotation.
 19. A device with no wheel account and no passwordless sudo cannot be mutated
     remotely.

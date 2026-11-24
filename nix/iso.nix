@@ -19,6 +19,7 @@ in
     prepairedFingerprint = prepaired.fingerprint or "";
     prepairedPublicKey = prepaired.publicKey or "";
     adminAuthorizedKey = prepaired.adminAuthorizedKey or "";
+    adminAuthorizedKeyFile = "";
   };
 
   services.openssh = {
