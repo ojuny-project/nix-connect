@@ -24,6 +24,14 @@ type engineFakeRunner struct {
 func (f *engineFakeRunner) Run(_ context.Context, _ string, _ []string, name string, args ...string) (string, error) {
 	f.calls = append(f.calls, name+" "+strings.Join(args, " "))
 	if name == "nix" {
+		for index, argument := range args {
+			if argument != "-o" || index+1 >= len(args) {
+				continue
+			}
+			if err := os.Symlink(f.closure, args[index+1]); err != nil {
+				return "", err
+			}
+		}
 		for _, argument := range args {
 			if strings.Contains(argument, "isoImage") {
 				return f.closure + "\n", nil
@@ -178,11 +186,25 @@ func TestRunISOStagesTheImage(t *testing.T) {
 	}
 	runner := &engineFakeRunner{closure: built}
 	service.EngineRunner = runner
-	output := filepath.Join(t.TempDir(), "deploytarget.iso")
+	output := filepath.Join(t.TempDir(), "deploy-target-iso")
 	if err := service.RunISO(context.Background(), "iso-job", httpapi.ISORequest{Output: output}); err != nil {
 		t.Fatal(err)
 	}
-	image, err := os.ReadFile(output)
+	link, err := os.Lstat(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if link.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("output is not an out-link: %s", link.Mode())
+	}
+	target, err := os.Readlink(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != built {
+		t.Fatalf("unexpected out-link target %q", target)
+	}
+	image, err := os.ReadFile(filepath.Join(output, "iso", "nixos.iso"))
 	if err != nil || string(image) != "image" {
 		t.Fatalf("unexpected image: %q %v", image, err)
 	}
