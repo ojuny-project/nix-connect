@@ -19,6 +19,7 @@ type engineFakeRunner struct {
 	calls      []string
 	closure    string
 	activation string
+	warning    string
 }
 
 func (f *engineFakeRunner) Run(_ context.Context, _ string, _ []string, name string, args ...string) (string, error) {
@@ -34,7 +35,7 @@ func (f *engineFakeRunner) Run(_ context.Context, _ string, _ []string, name str
 		}
 		for _, argument := range args {
 			if strings.Contains(argument, "isoImage") {
-				return f.closure + "\n", nil
+				return f.warning + f.closure + "\n", nil
 			}
 			if strings.Contains(argument, "deploy.nodes.") {
 				return f.activation + "\n", nil
@@ -184,7 +185,7 @@ func TestRunISOStagesTheImage(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(built, "iso", "nixos.iso"), []byte("image"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runner := &engineFakeRunner{closure: built}
+	runner := &engineFakeRunner{closure: built, warning: "warning: evaluation warning\n"}
 	service.EngineRunner = runner
 	output := filepath.Join(t.TempDir(), "deploy-target-iso")
 	if err := service.RunISO(context.Background(), "iso-job", httpapi.ISORequest{Output: output}); err != nil {

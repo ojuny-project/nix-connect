@@ -37,7 +37,7 @@ func (i *Install) Build(ctx context.Context, dir, host string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("deploy: build: %w: %s", err, output)
 	}
-	return firstLine(output), nil
+	return OutputPath(output), nil
 }
 
 func (i *Install) Copy(ctx context.Context, target, closure string) error {

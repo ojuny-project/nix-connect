@@ -202,7 +202,7 @@ func (s *Service) RunISO(ctx context.Context, jobID string, request httpapi.ISOR
 	if err != nil {
 		return fmt.Errorf("service: build deploytarget ISO: %w: %s", err, output)
 	}
-	built := filepath.Join(firstLine(output), "iso")
+	built := filepath.Join(deploy.OutputPath(output), "iso")
 	entries, err := os.ReadDir(built)
 	if err != nil {
 		return err
@@ -428,7 +428,7 @@ func (s *Service) buildPath(ctx context.Context, directory, attribute string) (s
 	if err != nil {
 		return "", fmt.Errorf("service: build %s: %w: %s", attribute, err, output)
 	}
-	path := firstLine(output)
+	path := deploy.OutputPath(output)
 	if path == "" {
 		return "", fmt.Errorf("service: build %s produced no path", attribute)
 	}
