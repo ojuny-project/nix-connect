@@ -156,21 +156,13 @@ func (a *App) openJobs() {
 
 	header := gtk.NewGrid()
 	header.SetColumnSpacing(12)
-	columns := []struct {
-		title string
-		width int
-	}{
-		{"ID", 120},
-		{"KIND", 80},
-		{"TARGET", 200},
-		{"STATE", 170},
-		{"UPDATED", 90},
-	}
+	header.SetColumnHomogeneous(true)
+	columns := []string{"ID", "KIND", "TARGET", "STATE", "UPDATED"}
 	for index, column := range columns {
-		label := gtk.NewLabel(column.title)
+		label := gtk.NewLabel(column)
 		label.AddCSSClass("nc-table-header")
 		label.SetXAlign(0)
-		label.SetSizeRequest(column.width, -1)
+		label.SetHExpand(true)
 		header.Attach(label, index, 0, 1, 1)
 	}
 	root.Append(header)
@@ -180,6 +172,8 @@ func (a *App) openJobs() {
 	list.SetSelectionMode(gtk.SelectionSingle)
 	scrolled := gtk.NewScrolledWindow()
 	scrolled.SetChild(list)
+	scrolled.SetPolicy(gtk.PolicyAutomatic, gtk.PolicyAutomatic)
+	scrolled.SetPropagateNaturalWidth(true)
 	scrolled.SetVExpand(true)
 	root.Append(scrolled)
 
@@ -297,25 +291,25 @@ func jobRow(job jobs.Job) *gtk.ListBoxRow {
 	row := gtk.NewListBoxRow()
 	grid := gtk.NewGrid()
 	grid.SetColumnSpacing(12)
+	grid.SetColumnHomogeneous(true)
 	grid.SetMarginTop(5)
 	grid.SetMarginBottom(5)
 	grid.SetMarginStart(6)
 	grid.SetMarginEnd(6)
 	values := []struct {
 		text  string
-		width int
 		class string
 	}{
-		{job.ID, 120, "nc-mono"},
-		{string(job.Kind), 80, ""},
-		{fallback(job.Target, "-"), 200, ""},
-		{string(job.State), 170, jobStateClass(job.State)},
-		{job.Updated.Local().Format("15:04:05"), 90, ""},
+		{job.ID, "nc-mono"},
+		{string(job.Kind), ""},
+		{fallback(job.Target, "-"), ""},
+		{string(job.State), jobStateClass(job.State)},
+		{job.Updated.Local().Format("15:04:05"), ""},
 	}
 	for index, value := range values {
 		label := gtk.NewLabel(value.text)
 		label.SetXAlign(0)
-		label.SetSizeRequest(value.width, -1)
+		label.SetHExpand(true)
 		label.SetEllipsize(pango.EllipsizeEnd)
 		if value.class != "" {
 			label.AddCSSClass(value.class)
@@ -351,14 +345,12 @@ func (a *App) openTrust() {
 
 	pendingHeader := gtk.NewGrid()
 	pendingHeader.SetColumnSpacing(12)
-	for index, column := range []struct {
-		title string
-		width int
-	}{{"PAIRING", 180}, {"PEER", 180}, {"CODE", 80}, {"EXPIRES", 80}} {
-		label := gtk.NewLabel(column.title)
+	pendingHeader.SetColumnHomogeneous(true)
+	for index, column := range []string{"PAIRING", "PEER", "CODE", "EXPIRES"} {
+		label := gtk.NewLabel(column)
 		label.AddCSSClass("nc-table-header")
 		label.SetXAlign(0)
-		label.SetSizeRequest(column.width, -1)
+		label.SetHExpand(true)
 		pendingHeader.Attach(label, index, 0, 1, 1)
 	}
 	root.Append(pendingHeader)
@@ -367,6 +359,8 @@ func (a *App) openTrust() {
 	pendingList.SetSelectionMode(gtk.SelectionSingle)
 	pendingScrolled := gtk.NewScrolledWindow()
 	pendingScrolled.SetChild(pendingList)
+	pendingScrolled.SetPolicy(gtk.PolicyAutomatic, gtk.PolicyAutomatic)
+	pendingScrolled.SetPropagateNaturalWidth(true)
 	pendingScrolled.SetVExpand(true)
 	root.Append(pendingScrolled)
 
@@ -377,14 +371,12 @@ func (a *App) openTrust() {
 
 	trustHeader := gtk.NewGrid()
 	trustHeader.SetColumnSpacing(12)
-	for index, column := range []struct {
-		title string
-		width int
-	}{{"FINGERPRINT", 220}, {"HOST", 160}, {"ADDRESS", 120}, {"PAIRED", 140}} {
-		label := gtk.NewLabel(column.title)
+	trustHeader.SetColumnHomogeneous(true)
+	for index, column := range []string{"FINGERPRINT", "HOST", "ADDRESS", "PAIRED"} {
+		label := gtk.NewLabel(column)
 		label.AddCSSClass("nc-table-header")
 		label.SetXAlign(0)
-		label.SetSizeRequest(column.width, -1)
+		label.SetHExpand(true)
 		trustHeader.Attach(label, index, 0, 1, 1)
 	}
 	root.Append(trustHeader)
@@ -393,6 +385,8 @@ func (a *App) openTrust() {
 	trustList.SetSelectionMode(gtk.SelectionSingle)
 	trustScrolled := gtk.NewScrolledWindow()
 	trustScrolled.SetChild(trustList)
+	trustScrolled.SetPolicy(gtk.PolicyAutomatic, gtk.PolicyAutomatic)
+	trustScrolled.SetPropagateNaturalWidth(true)
 	trustScrolled.SetVExpand(true)
 	root.Append(trustScrolled)
 
@@ -500,24 +494,24 @@ func pendingRow(request pairing.Request) *gtk.ListBoxRow {
 	row := gtk.NewListBoxRow()
 	grid := gtk.NewGrid()
 	grid.SetColumnSpacing(12)
+	grid.SetColumnHomogeneous(true)
 	grid.SetMarginTop(5)
 	grid.SetMarginBottom(5)
 	grid.SetMarginStart(6)
 	grid.SetMarginEnd(6)
 	values := []struct {
 		text  string
-		width int
 		class string
 	}{
-		{request.ID, 180, "nc-mono"},
-		{request.PeerID, 180, "nc-mono"},
-		{request.Code, 80, "nc-state-warn"},
-		{request.Expires.Local().Format("15:04"), 80, ""},
+		{request.ID, "nc-mono"},
+		{request.PeerID, "nc-mono"},
+		{request.Code, "nc-state-warn"},
+		{request.Expires.Local().Format("15:04"), ""},
 	}
 	for index, value := range values {
 		label := gtk.NewLabel(value.text)
 		label.SetXAlign(0)
-		label.SetSizeRequest(value.width, -1)
+		label.SetHExpand(true)
 		label.SetEllipsize(pango.EllipsizeEnd)
 		if value.class != "" {
 			label.AddCSSClass(value.class)
@@ -533,24 +527,24 @@ func trustRow(record trust.Record) *gtk.ListBoxRow {
 	row := gtk.NewListBoxRow()
 	grid := gtk.NewGrid()
 	grid.SetColumnSpacing(12)
+	grid.SetColumnHomogeneous(true)
 	grid.SetMarginTop(5)
 	grid.SetMarginBottom(5)
 	grid.SetMarginStart(6)
 	grid.SetMarginEnd(6)
 	values := []struct {
 		text  string
-		width int
 		class string
 	}{
-		{record.Fingerprint, 220, "nc-mono"},
-		{fallback(record.Hostname, "-"), 160, ""},
-		{fallback(record.Address, "-"), 120, ""},
-		{record.PairedAt.Local().Format("2006-01-02 15:04"), 140, ""},
+		{record.Fingerprint, "nc-mono"},
+		{fallback(record.Hostname, "-"), ""},
+		{fallback(record.Address, "-"), ""},
+		{record.PairedAt.Local().Format("2006-01-02 15:04"), ""},
 	}
 	for index, value := range values {
 		label := gtk.NewLabel(value.text)
 		label.SetXAlign(0)
-		label.SetSizeRequest(value.width, -1)
+		label.SetHExpand(true)
 		label.SetEllipsize(pango.EllipsizeEnd)
 		if value.class != "" {
 			label.AddCSSClass(value.class)

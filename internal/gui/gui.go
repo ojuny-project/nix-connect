@@ -71,6 +71,8 @@ func (a *App) build() {
 	paned.SetStartChild(a.buildDevicePanel())
 	paned.SetEndChild(a.buildStatusPanel())
 	paned.SetPosition(620)
+	paned.SetResizeStartChild(true)
+	paned.SetShrinkStartChild(true)
 	paned.SetVExpand(true)
 	root.Append(paned)
 
@@ -183,23 +185,15 @@ func (a *App) buildDevicePanel() gtk.Widgetter {
 
 	header := gtk.NewGrid()
 	header.SetColumnSpacing(12)
+	header.SetColumnHomogeneous(true)
 	header.SetMarginStart(6)
 	header.SetMarginEnd(6)
-	columns := []struct {
-		title string
-		width int
-	}{
-		{"HOST", 160},
-		{"ID", 110},
-		{"ADDRESS", 120},
-		{"KIND", 80},
-		{"STATE", 90},
-	}
+	columns := []string{"HOST", "ID", "ADDRESS", "KIND", "STATE"}
 	for index, column := range columns {
-		label := gtk.NewLabel(column.title)
+		label := gtk.NewLabel(column)
 		label.AddCSSClass("nc-table-header")
 		label.SetXAlign(0)
-		label.SetSizeRequest(column.width, -1)
+		label.SetHExpand(true)
 		header.Attach(label, index, 0, 1, 1)
 	}
 	box.Append(header)
@@ -226,6 +220,8 @@ func (a *App) buildDevicePanel() gtk.Widgetter {
 
 	scrolled := gtk.NewScrolledWindow()
 	scrolled.SetChild(a.deviceList)
+	scrolled.SetPolicy(gtk.PolicyAutomatic, gtk.PolicyAutomatic)
+	scrolled.SetPropagateNaturalWidth(true)
 	scrolled.SetVExpand(true)
 	box.Append(scrolled)
 
@@ -365,6 +361,7 @@ func (a *App) deviceRow(device httpapi.Device) *gtk.ListBoxRow {
 	row := gtk.NewListBoxRow()
 	grid := gtk.NewGrid()
 	grid.SetColumnSpacing(12)
+	grid.SetColumnHomogeneous(true)
 	grid.SetMarginTop(5)
 	grid.SetMarginBottom(5)
 	grid.SetMarginStart(6)
@@ -373,19 +370,18 @@ func (a *App) deviceRow(device httpapi.Device) *gtk.ListBoxRow {
 	state := deviceState(device)
 	values := []struct {
 		text  string
-		width int
 		class string
 	}{
-		{fallback(device.Hostname, "-"), 160, ""},
-		{deviceShortID(device), 110, "nc-mono"},
-		{deviceAddress(device), 120, ""},
-		{deviceKind(device), 80, ""},
-		{state, 90, stateClass(state)},
+		{fallback(device.Hostname, "-"), ""},
+		{deviceShortID(device), "nc-mono"},
+		{deviceAddress(device), ""},
+		{deviceKind(device), ""},
+		{state, stateClass(state)},
 	}
 	for index, value := range values {
 		label := gtk.NewLabel(value.text)
 		label.SetXAlign(0)
-		label.SetSizeRequest(value.width, -1)
+		label.SetHExpand(true)
 		label.SetEllipsize(pango.EllipsizeEnd)
 		if value.class != "" {
 			label.AddCSSClass(value.class)
