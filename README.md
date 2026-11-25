@@ -150,8 +150,9 @@ The runtime form embeds the administration identity, the administration SSH
 public key and the pre-pairing trust record. It copies the installed
 `nixconnect-source`, writes the current device material and builds the ISO as a
 Nix out-link. The default out-link is `deploy-target-iso` in the current
-directory; `--output PATH` or `-o PATH` overrides it. The out-link points to the
-Nix result directory, so the image is at
+directory; `--output PATH` or `-o PATH` overrides it, and `~` in `PATH` expands
+to the caller's home directory. The out-link points to the Nix result directory,
+so the image is at
 `deploy-target-iso/iso/deploytarget-<short-id>.iso`. The daemon does not copy
 the image. The direct expression builds the generic image used by CI.
 
