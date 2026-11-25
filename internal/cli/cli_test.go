@@ -194,6 +194,11 @@ func TestRunMutationCommands(t *testing.T) {
 	if output, err := runCLI(t, socket, "build-iso", "-o", "/tmp/nix-connect-test.iso"); err != nil || !strings.Contains(output, "/tmp/nix-connect-test.iso") {
 		t.Fatalf("build-iso output: %q %v", output, err)
 	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if output, err := runCLI(t, socket, "build-iso", "-o", "~/nix-connect-test"); err != nil || !strings.Contains(output, filepath.Join(home, "nix-connect-test")) {
+		t.Fatalf("build-iso home output: %q %v", output, err)
+	}
 	if output, err := runCLI(t, socket, "confirm", "job"); err != nil {
 		t.Fatalf("confirm: %q %v", output, err)
 	}

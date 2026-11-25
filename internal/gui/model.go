@@ -3,11 +3,13 @@ package gui
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ojuny-project/nix-connect/internal/httpapi"
 	"github.com/ojuny-project/nix-connect/internal/jobs"
 	"github.com/ojuny-project/nix-connect/internal/pairing"
+	"github.com/ojuny-project/nix-connect/internal/pathutil"
 	"github.com/ojuny-project/nix-connect/internal/trust"
 )
 
@@ -117,6 +119,14 @@ func (m *Model) actionAvailable(action string) bool {
 	default:
 		return true
 	}
+}
+
+func isoOutputPath(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		value = "deploy-target-iso"
+	}
+	return pathutil.Expand(value)
 }
 
 func deviceState(device httpapi.Device) string {

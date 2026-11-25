@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"strings"
 	"time"
 
 	gdk "github.com/diamondburned/gotk4/pkg/gdk/v4"
@@ -208,11 +206,21 @@ func (a *App) buildDevicePanel() gtk.Widgetter {
 	placeholder.SetMarginBottom(24)
 	a.deviceList.SetPlaceholder(placeholder)
 	a.deviceList.ConnectRowSelected(func(row *gtk.ListBoxRow) {
+		if row == nil {
+			a.model.Selected = -1
+			a.model.Detail = false
+			a.refreshStatus()
+			a.updateActions()
+			return
+		}
 		a.model.Select(row.Index())
 		a.refreshStatus()
 		a.updateActions()
 	})
 	a.deviceList.ConnectRowActivated(func(row *gtk.ListBoxRow) {
+		if row == nil {
+			return
+		}
 		a.model.Select(row.Index())
 		a.refreshStatus()
 		a.updateActions()
@@ -348,12 +356,13 @@ func (a *App) refreshHeader() {
 }
 
 func (a *App) refreshDevices() {
+	selected := a.model.Selected
 	a.deviceList.RemoveAll()
 	for _, device := range a.model.Devices {
 		a.deviceList.Append(a.deviceRow(device))
 	}
-	if a.model.Selected >= 0 && a.model.Selected < len(a.model.Devices) {
-		a.deviceList.SelectRow(a.deviceList.RowAtIndex(a.model.Selected))
+	if selected >= 0 && selected < len(a.model.Devices) {
+		a.deviceList.SelectRow(a.deviceList.RowAtIndex(selected))
 	}
 }
 
@@ -759,11 +768,7 @@ func (a *App) buildISO() {
 	a.formDialog("Build deploytarget ISO", "The out-link points to a directory containing iso/<image>.iso. The daemon does not copy the image.", []formField{
 		{"Output link", "deploy-target-iso", false, true},
 	}, func(values []string) error {
-		output := strings.TrimSpace(values[0])
-		if output == "" {
-			output = "deploy-target-iso"
-		}
-		destination, err := filepath.Abs(output)
+		destination, err := isoOutputPath(values[0])
 		if err != nil {
 			return err
 		}

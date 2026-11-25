@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/ojuny-project/nix-connect/internal/httpapi"
 	"github.com/ojuny-project/nix-connect/internal/jobs"
 	"github.com/ojuny-project/nix-connect/internal/pairing"
+	"github.com/ojuny-project/nix-connect/internal/pathutil"
 	"github.com/ojuny-project/nix-connect/internal/trust"
 )
 
@@ -588,7 +588,7 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 		if output == "" {
 			output = "deploy-target-iso"
 		}
-		destination, err := filepath.Abs(output)
+		destination, err := pathutil.Expand(output)
 		if err != nil {
 			m.err = err
 			m.form = nil

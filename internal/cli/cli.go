@@ -9,12 +9,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"syscall"
 
 	"github.com/ojuny-project/nix-connect/internal/httpapi"
 	"github.com/ojuny-project/nix-connect/internal/pairing"
+	"github.com/ojuny-project/nix-connect/internal/pathutil"
 	"github.com/ojuny-project/nix-connect/internal/tui"
 )
 
@@ -342,7 +342,7 @@ func buildISO(ctx context.Context, client *httpapi.Client, args []string) error 
 	if set.NArg() != 0 {
 		return errors.New("nixconnect: build-iso [--output PATH]")
 	}
-	destination, err := filepath.Abs(output)
+	destination, err := pathutil.Expand(output)
 	if err != nil {
 		return err
 	}

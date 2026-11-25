@@ -1,6 +1,8 @@
 package gui
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -85,5 +87,46 @@ func TestFormattingHelpers(t *testing.T) {
 	}
 	if deviceAddress(httpapi.Device{}) != "-" || deviceKind(httpapi.Device{}) != "unknown" {
 		t.Fatal("device fallbacks are wrong")
+	}
+}
+
+func TestSelectClearsSelection(t *testing.T) {
+	value := NewModel(nil)
+	value.Devices = []httpapi.Device{{ID: "one"}}
+	value.Select(0)
+	if value.Selected != 0 || !value.Detail {
+		t.Fatalf("selection was not stored: %+v", value)
+	}
+	value.Select(-1)
+	if value.Selected != -1 || value.Detail {
+		t.Fatalf("selection was not cleared: %+v", value)
+	}
+	value.Select(5)
+	if value.Selected != -1 || value.Detail {
+		t.Fatalf("out of range selection was accepted: %+v", value)
+	}
+}
+
+func TestISOOutputPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	expanded, err := isoOutputPath("~/temp/deploy-target-iso")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := filepath.Join(home, "temp", "deploy-target-iso")
+	if expanded != expected {
+		t.Fatalf("unexpected ISO output %q", expanded)
+	}
+	expanded, err = isoOutputPath("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	working, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expanded != filepath.Join(working, "deploy-target-iso") {
+		t.Fatalf("unexpected default ISO output %q", expanded)
 	}
 }

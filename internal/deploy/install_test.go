@@ -96,6 +96,7 @@ func TestStageStateCopiesTheDurableFiles(t *testing.T) {
 		"registration.json":     "{}",
 		"trust.json":            "{}",
 		"config.json":           "{}",
+		"admin_ssh.pub":         "ssh-ed25519 AAAA\n",
 		"jobs/job.json":         "{}",
 	}
 	for relative, content := range files {
@@ -271,5 +272,8 @@ func TestAuthorizeKeyWritesAccountFile(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "ssh-ed25519 EXISTING") || !strings.Contains(string(data), "ssh-ed25519 AAAA") {
 		t.Fatalf("existing key was lost: %q", data)
+	}
+	if err := install.AuthorizeKey(root, "alice", "  "); err == nil {
+		t.Fatal("empty administration key was accepted")
 	}
 }

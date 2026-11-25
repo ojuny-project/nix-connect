@@ -230,17 +230,25 @@ func (a *App) openJobs() {
 		items = loaded
 		active, _ := (&Model{Jobs: items}).ActiveJobs()
 		summary.SetText(fmt.Sprintf("%d jobs, %d active", len(items), active))
+		previous := selected
 		list.RemoveAll()
 		for _, job := range items {
 			list.Append(jobRow(job))
 		}
-		if selected >= 0 && selected < len(items) {
-			list.SelectRow(list.RowAtIndex(selected))
+		if previous >= 0 && previous < len(items) {
+			selected = previous
+			list.SelectRow(list.RowAtIndex(previous))
 		} else {
+			selected = -1
 			showDetail()
 		}
 	}
 	list.ConnectRowSelected(func(row *gtk.ListBoxRow) {
+		if row == nil {
+			selected = -1
+			showDetail()
+			return
+		}
 		selected = row.Index()
 		showDetail()
 	})

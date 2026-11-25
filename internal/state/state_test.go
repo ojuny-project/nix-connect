@@ -155,6 +155,35 @@ func TestAdministrationKeyPermissionsAndFormats(t *testing.T) {
 	}
 }
 
+func TestOpenSynchronizesAdministrationAuthorizedKey(t *testing.T) {
+	directory := t.TempDir()
+	store, err := Open(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, err := store.AdminAuthorizedKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(directory, ConfigFile)); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Config.AdminAuthorizedKey != expected {
+		t.Fatalf("config was not synchronized: %q", reopened.Config.AdminAuthorizedKey)
+	}
+	data, err := os.ReadFile(filepath.Join(directory, AdminPublicKeyFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(data)) != expected {
+		t.Fatalf("public key file was not synchronized: %q", data)
+	}
+}
+
 func TestRotateAdministrationKey(t *testing.T) {
 	directory := t.TempDir()
 	store, err := Open(directory)
