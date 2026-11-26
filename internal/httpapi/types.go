@@ -79,6 +79,26 @@ type SSHInfo struct {
 	AgentSocket string `json:"agentSocket"`
 }
 
+type Disk struct {
+	Name        string   `json:"name"`
+	Path        string   `json:"path"`
+	Size        uint64   `json:"size"`
+	Type        string   `json:"type"`
+	FileSystem  string   `json:"fileSystem,omitempty"`
+	Transport   string   `json:"transport,omitempty"`
+	Removable   bool     `json:"removable,omitempty"`
+	ReadOnly    bool     `json:"readOnly,omitempty"`
+	Mountpoints []string `json:"mountpoints,omitempty"`
+	Model       string   `json:"model,omitempty"`
+	Children    []Disk   `json:"children,omitempty"`
+}
+
+type TargetInfo struct {
+	Registration registration.Record `json:"registration"`
+	Firmware     string              `json:"firmware"`
+	Disks        []Disk              `json:"disks"`
+}
+
 type PairRequest struct {
 	PeerID  string `json:"peerId"`
 	PeerKey string `json:"peerKey"`
@@ -105,7 +125,10 @@ type KeyImportRequest struct {
 }
 
 type ISORequest struct {
-	Output string `json:"output,omitempty"`
+	Output     string `json:"output,omitempty"`
+	OwnerUID   int    `json:"-"`
+	OwnerGID   int    `json:"-"`
+	OwnerKnown bool   `json:"-"`
 }
 
 type PublishRequest struct {
@@ -122,6 +145,7 @@ type Service interface {
 	Deploy(ctx context.Context, id string, request DeployRequest) (string, error)
 	Update(ctx context.Context, id string, request UpdateRequest) (string, error)
 	SSH(ctx context.Context, id string) (SSHInfo, error)
+	Target(ctx context.Context, id string) (TargetInfo, error)
 	Jobs(ctx context.Context) []jobs.Job
 	Job(ctx context.Context, id string) (jobs.Job, error)
 	Confirm(ctx context.Context, id, confirmer string) error

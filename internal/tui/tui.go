@@ -49,11 +49,20 @@ type model struct {
 	height      int
 }
 
+type formChoice struct {
+	value string
+	label string
+}
+
 type form struct {
-	kind   string
-	labels []string
-	values []string
-	index  int
+	kind     string
+	deviceID string
+	labels   []string
+	hints    []string
+	values   []string
+	choices  [][]formChoice
+	edited   []bool
+	index    int
 }
 
 type loadedMsg struct {
@@ -79,6 +88,12 @@ type trustMsg struct {
 type jobsMsg struct {
 	list []jobs.Job
 	err  error
+}
+
+type targetMsg struct {
+	deviceID string
+	info     httpapi.TargetInfo
+	err      error
 }
 
 func Run(client *httpapi.Client) error {
@@ -179,6 +194,15 @@ func loadJobs(client *httpapi.Client) tea.Cmd {
 	}
 }
 
+func loadTarget(client *httpapi.Client, id string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		info, err := client.Target(ctx, id)
+		return targetMsg{deviceID: id, info: info, err: err}
+	}
+}
+
 func confirmJob(client *httpapi.Client, id string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -226,30 +250,176 @@ func rotateAdminKey(client *httpapi.Client) tea.Cmd {
 	}
 }
 
+const (
+	deployRepository = 0
+	deployBranch     = 1
+	deployHost       = 2
+	deployDisk       = 3
+	deployAccount    = 4
+	deployPassword   = 5
+	deployFirmware   = 6
+)
+
 func newForm(kind string) *form {
 	labels := map[string][]string{
-		"deploy":     {"flake URL", "branch", "host", "disk", "account", "password"},
-		"update":     {"password"},
-		"register":   {"flake URL", "branch", "host", "account", "password"},
-		"unregister": {"password"},
-		"publish":    {"new remote", "branch", "password"},
+		"deploy":     {"flake URL", "branch", "host", "disk", "account", "consent password", "firmware"},
+		"update":     {"consent password"},
+		"register":   {"flake URL", "branch", "host", "account", "consent password"},
+		"unregister": {"consent password"},
+		"publish":    {"new remote", "branch", "consent password"},
 		"iso":        {"output link"},
 	}[kind]
-	values := make([]string, len(labels))
+	value := &form{
+		kind:    kind,
+		labels:  labels,
+		hints:   make([]string, len(labels)),
+		values:  make([]string, len(labels)),
+		choices: make([][]formChoice, len(labels)),
+		edited:  make([]bool, len(labels)),
+	}
 	if kind == "iso" {
-		values[0] = "deploy-target-iso"
+		value.values[0] = "deploy-target-iso"
+		value.hints[0] = "Nix out-link path; ~ expands to your home directory"
 	}
 	if kind == "deploy" || kind == "register" {
-		for index, label := range labels {
-			switch label {
-			case "branch":
-				values[index] = "main"
-			case "host":
-				values[index] = "host"
-			}
+		value.values[1] = "main"
+		value.values[2] = "host"
+	}
+	return value
+}
+
+func newDeployForm(device httpapi.Device, status httpapi.Status) *form {
+	value := newForm("deploy")
+	value.deviceID = device.ID
+	if status.Registration.Repository != "" {
+		value.values[deployRepository] = status.Registration.Repository
+	}
+	if status.Registration.Branch != "" {
+		value.values[deployBranch] = status.Registration.Branch
+	}
+	if device.Hostname != "" {
+		value.values[deployHost] = device.Hostname
+	}
+	if status.Registration.Account != "" {
+		value.values[deployAccount] = status.Registration.Account
+	} else if device.Kind == "live" {
+		value.values[deployAccount] = "nixos"
+	}
+	value.values[deployFirmware] = "efi"
+	value.choices[deployFirmware] = []formChoice{
+		{value: "efi", label: "efi (UEFI)"},
+		{value: "bios", label: "bios (legacy)"},
+	}
+	value.hints[deployRepository] = "git URL of the flake to deploy"
+	value.hints[deployBranch] = "branch to build"
+	value.hints[deployHost] = "nixosConfigurations.<host> in the flake"
+	value.hints[deployDisk] = "left/right select; type a device path to override the filters"
+	value.hints[deployAccount] = "account to create on the target"
+	value.hints[deployPassword] = "password for the target's sudo consent"
+	value.hints[deployFirmware] = "left/right select; EFI is the usual choice"
+	return value
+}
+
+func newRegisterForm(device httpapi.Device, status httpapi.Status) *form {
+	value := newForm("register")
+	value.deviceID = device.ID
+	if status.Registration.Repository != "" {
+		value.values[0] = status.Registration.Repository
+	}
+	if status.Registration.Branch != "" {
+		value.values[1] = status.Registration.Branch
+	}
+	if device.Hostname != "" {
+		value.values[2] = device.Hostname
+	}
+	if status.Registration.Account != "" {
+		value.values[3] = status.Registration.Account
+	}
+	value.hints = []string{
+		"git URL of the flake to register",
+		"branch to build",
+		"nixosConfigurations.<host> in the flake",
+		"account that owns the flake on the target",
+		"password for the target's sudo consent",
+	}
+	return value
+}
+
+func (f *form) displayValue(index int) string {
+	value := f.values[index]
+	if strings.Contains(strings.ToLower(f.labels[index]), "password") {
+		if value == "" {
+			return ""
+		}
+		return strings.Repeat("*", len([]rune(value)))
+	}
+	for _, choice := range f.choices[index] {
+		if choice.value == value {
+			return choice.label
 		}
 	}
-	return &form{kind: kind, labels: labels, values: values}
+	return value
+}
+
+func (f *form) cycle(delta int) {
+	choices := f.choices[f.index]
+	if len(choices) == 0 {
+		return
+	}
+	current := -1
+	for index, choice := range choices {
+		if choice.value == f.values[f.index] {
+			current = index
+			break
+		}
+	}
+	if current < 0 {
+		current = 0
+	} else {
+		current = (current + delta + len(choices)) % len(choices)
+	}
+	f.values[f.index] = choices[current].value
+	f.edited[f.index] = true
+}
+
+func (f *form) applyTarget(info httpapi.TargetInfo) {
+	if f.kind != "deploy" {
+		return
+	}
+	registration := info.Registration
+	if !f.edited[deployRepository] && registration.Repository != "" {
+		f.values[deployRepository] = registration.Repository
+	}
+	if !f.edited[deployBranch] && registration.Branch != "" {
+		f.values[deployBranch] = registration.Branch
+	}
+	if !f.edited[deployHost] && registration.Host != "" {
+		f.values[deployHost] = registration.Host
+	}
+	if !f.edited[deployAccount] && registration.Account != "" {
+		f.values[deployAccount] = registration.Account
+	}
+	if !f.edited[deployFirmware] {
+		if info.Firmware == "bios" {
+			f.values[deployFirmware] = "bios"
+		} else {
+			f.values[deployFirmware] = "efi"
+		}
+	}
+	eligible := eligibleDisks(info.Disks)
+	choices := make([]formChoice, 0, len(eligible))
+	for _, disk := range eligible {
+		choices = append(choices, formChoice{value: disk.Path, label: diskLabel(disk)})
+	}
+	f.choices[deployDisk] = choices
+	if len(choices) == 0 {
+		f.hints[deployDisk] = "no eligible disks found; type a device path"
+	} else {
+		f.hints[deployDisk] = "left/right select; type a device path to override the filters"
+	}
+	if !f.edited[deployDisk] && len(choices) > 0 {
+		f.values[deployDisk] = choices[0].value
+	}
 }
 
 func (m model) selected() (httpapi.Device, bool) {
@@ -303,6 +473,12 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = message.err
 		if m.jobCursor >= len(m.jobList) && len(m.jobList) > 0 {
 			m.jobCursor = len(m.jobList) - 1
+		}
+	case targetMsg:
+		m.err = message.err
+		m.message = ""
+		if message.err == nil && m.form != nil && m.form.deviceID == message.deviceID {
+			m.form.applyTarget(message.info)
 		}
 	case actionMsg:
 		if message.err != nil {
@@ -388,13 +564,23 @@ func (m model) updateList(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detail = !m.detail
 	case "d":
 		m.confirm = ""
-		m.form = newForm("deploy")
+		device, ok := m.selected()
+		if !ok {
+			return m, nil
+		}
+		m.form = newDeployForm(device, m.status)
+		m.message = "reading block devices from " + fallback(device.Hostname, device.ID) + "..."
+		return m, loadTarget(m.client, device.ID)
 	case "u":
 		m.confirm = ""
 		m.form = newForm("update")
 	case "n":
 		m.confirm = ""
-		m.form = newForm("register")
+		device, ok := m.selected()
+		if !ok {
+			return m, nil
+		}
+		m.form = newRegisterForm(device, m.status)
 	case "x":
 		m.confirm = ""
 		m.form = newForm("unregister")
@@ -431,7 +617,11 @@ func (m model) updateList(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.pair = &response
 		m.pairTarget = device.ID
-		m.message = fmt.Sprintf("pairing code %s for %s; confirm on the target, then press P again", response.Code, device.Hostname)
+		m.message = fmt.Sprintf(
+			"pairing code %s for %s\nNothing pops up on the other device. There, open the trust view (t) or run `nixconnect pair pending`, then confirm with this code.\nHere, press P again to confirm.",
+			response.Code,
+			fallback(device.Hostname, device.ID),
+		)
 	case "s":
 		m.confirm = ""
 		device, ok := m.selected()
@@ -554,10 +744,17 @@ func (m model) updateForm(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyCtrlS:
 		return m.submitForm()
 	case tea.KeyBackspace:
+		m.form.edited[m.form.index] = true
 		if len(m.form.values[m.form.index]) > 0 {
 			value := []rune(m.form.values[m.form.index])
 			m.form.values[m.form.index] = string(value[:len(value)-1])
 		}
+		return m, nil
+	case tea.KeyLeft:
+		m.form.cycle(-1)
+		return m, nil
+	case tea.KeyRight:
+		m.form.cycle(1)
 		return m, nil
 	case tea.KeyTab, tea.KeyDown:
 		if m.form.index < len(m.form.values)-1 {
@@ -576,6 +773,10 @@ func (m model) updateForm(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.form.index++
 		return m, nil
 	case tea.KeyRunes:
+		if !m.form.edited[m.form.index] {
+			m.form.values[m.form.index] = ""
+			m.form.edited[m.form.index] = true
+		}
 		m.form.values[m.form.index] += string(message.Runes)
 		return m, nil
 	}
@@ -621,12 +822,13 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 	switch m.form.kind {
 	case "deploy":
 		job, err = m.client.Deploy(ctx, device.ID, httpapi.DeployRequest{
-			Repository: values[0],
-			Branch:     values[1],
-			Host:       values[2],
-			Disk:       values[3],
-			Account:    values[4],
-			Password:   values[5],
+			Repository: values[deployRepository],
+			Branch:     values[deployBranch],
+			Host:       values[deployHost],
+			Disk:       values[deployDisk],
+			Account:    values[deployAccount],
+			Password:   values[deployPassword],
+			Firmware:   values[deployFirmware],
 		})
 	case "update":
 		job, err = m.client.Update(ctx, device.ID, httpapi.UpdateRequest{Password: values[0]})

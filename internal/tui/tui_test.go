@@ -10,6 +10,7 @@ import (
 	"github.com/ojuny-project/nix-connect/internal/httpapi"
 	"github.com/ojuny-project/nix-connect/internal/jobs"
 	"github.com/ojuny-project/nix-connect/internal/pairing"
+	"github.com/ojuny-project/nix-connect/internal/registration"
 	"github.com/ojuny-project/nix-connect/internal/trust"
 )
 
@@ -227,6 +228,9 @@ func TestTrustViewListsPendingPairings(t *testing.T) {
 	if !strings.Contains(view, "pair-id") || !strings.Contains(view, "123456") || !strings.Contains(view, "confirm pending") {
 		t.Fatalf("pending pairing is missing:\n%s", view)
 	}
+	if !strings.Contains(view, "nothing pops up") {
+		t.Fatalf("pairing explanation is missing:\n%s", view)
+	}
 	updated, _ := value.Update(tea.KeyMsg{Type: tea.KeyDown})
 	value = updated.(model)
 	if value.trustCursor != 1 {
@@ -320,6 +324,107 @@ func TestDashboardCountsAndEmptyPeers(t *testing.T) {
 	}
 	if !strings.Contains(view, "1 (1 active)") || !strings.Contains(view, "Trusted") {
 		t.Fatalf("dashboard counts are missing:\n%s", view)
+	}
+}
+
+func TestDeployFormAutoFills(t *testing.T) {
+	status := httpapi.Status{Registration: registration.Record{
+		Repository: "https://example.invalid/flake",
+		Branch:     "main",
+		Account:    "alice",
+	}}
+	device := httpapi.Device{ID: "peer", Hostname: "target", Kind: "live"}
+	value := newDeployForm(device, status)
+	if value.values[deployRepository] != status.Registration.Repository {
+		t.Fatalf("repository was not filled: %q", value.values[deployRepository])
+	}
+	if value.values[deployBranch] != "main" {
+		t.Fatalf("branch was not filled: %q", value.values[deployBranch])
+	}
+	if value.values[deployHost] != "target" {
+		t.Fatalf("host was not filled: %q", value.values[deployHost])
+	}
+	if value.values[deployAccount] != "alice" {
+		t.Fatalf("account was not filled: %q", value.values[deployAccount])
+	}
+	if value.values[deployFirmware] != "efi" || len(value.choices[deployFirmware]) != 2 {
+		t.Fatalf("firmware choices are missing: %q %+v", value.values[deployFirmware], value.choices[deployFirmware])
+	}
+}
+
+func TestDeployFormAppliesTargetInfo(t *testing.T) {
+	value := newDeployForm(
+		httpapi.Device{ID: "peer", Hostname: "live", Kind: "live"},
+		httpapi.Status{},
+	)
+	value.applyTarget(httpapi.TargetInfo{
+		Registration: registration.Record{Host: "installed", Account: "den"},
+		Firmware:     "bios",
+		Disks: []httpapi.Disk{
+			{Path: "/dev/nvme0n1", Type: "disk", Size: 100 << 30},
+			{Path: "/dev/sdb", Type: "disk", Size: 100 << 30, Removable: true},
+		},
+	})
+	if value.values[deployHost] != "installed" || value.values[deployAccount] != "den" {
+		t.Fatalf("target registration was not applied: %+v", value.values)
+	}
+	if value.values[deployFirmware] != "bios" {
+		t.Fatalf("firmware was not applied: %q", value.values[deployFirmware])
+	}
+	if value.values[deployDisk] != "/dev/nvme0n1" || len(value.choices[deployDisk]) != 1 {
+		t.Fatalf("disk choices were not applied: %q %+v", value.values[deployDisk], value.choices[deployDisk])
+	}
+}
+
+func TestEligibleDisksAppliesOjunyFilters(t *testing.T) {
+	disks := []httpapi.Disk{
+		{Path: "/dev/good", Type: "disk", Size: 100 << 30},
+		{Path: "/dev/usb", Type: "disk", Size: 100 << 30, Transport: "usb"},
+		{Path: "/dev/removable", Type: "disk", Size: 100 << 30, Removable: true},
+		{Path: "/dev/readonly", Type: "disk", Size: 100 << 30, ReadOnly: true},
+		{Path: "/dev/small", Type: "disk", Size: 4 << 30},
+		{Path: "/dev/mounted", Type: "disk", Size: 100 << 30, Mountpoints: []string{"/"}},
+		{Path: "/dev/child", Type: "disk", Size: 100 << 30, Children: []httpapi.Disk{{Mountpoints: []string{"/boot"}}}},
+		{Path: "/dev/vfat", Type: "disk", Size: 100 << 30, Children: []httpapi.Disk{{FileSystem: "vfat"}}},
+		{Path: "/dev/loop", Type: "loop", Size: 100 << 30},
+	}
+	eligible := eligibleDisks(disks)
+	if len(eligible) != 1 || eligible[0].Path != "/dev/good" {
+		t.Fatalf("unexpected eligible disks: %+v", eligible)
+	}
+}
+
+func TestDeployFormCyclesDiskChoices(t *testing.T) {
+	value := newDeployForm(httpapi.Device{ID: "peer", Hostname: "peer"}, httpapi.Status{})
+	value.choices[deployDisk] = []formChoice{
+		{value: "/dev/a", label: "a"},
+		{value: "/dev/b", label: "b"},
+	}
+	value.values[deployDisk] = "/dev/a"
+	value.index = deployDisk
+	value.cycle(1)
+	if value.values[deployDisk] != "/dev/b" {
+		t.Fatalf("right did not select the next disk: %q", value.values[deployDisk])
+	}
+	value.cycle(-1)
+	if value.values[deployDisk] != "/dev/a" {
+		t.Fatalf("left did not select the previous disk: %q", value.values[deployDisk])
+	}
+}
+
+func TestTargetMessageFillsDeployForm(t *testing.T) {
+	value := sampleModel()
+	value.cursor = 1
+	value.form = newDeployForm(value.devices[1], value.status)
+	updated, _ := value.Update(targetMsg{
+		deviceID: value.devices[1].ID,
+		info: httpapi.TargetInfo{
+			Disks: []httpapi.Disk{{Path: "/dev/nvme0n1", Type: "disk", Size: 100 << 30}},
+		},
+	})
+	value = updated.(model)
+	if value.form == nil || value.form.values[deployDisk] != "/dev/nvme0n1" {
+		t.Fatalf("target disks were not applied: %+v", value.form)
 	}
 }
 

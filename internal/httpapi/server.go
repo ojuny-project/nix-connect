@@ -29,6 +29,22 @@ func Peer(ctx context.Context) string {
 	return value
 }
 
+type owner struct {
+	uid int
+	gid int
+}
+
+type ownerKey struct{}
+
+func WithOwner(ctx context.Context, uid, gid int) context.Context {
+	return context.WithValue(ctx, ownerKey{}, owner{uid: uid, gid: gid})
+}
+
+func Owner(ctx context.Context) (int, int, bool) {
+	value, ok := ctx.Value(ownerKey{}).(owner)
+	return value.uid, value.gid, ok
+}
+
 type Server struct {
 	service Service
 	logger  *slog.Logger
@@ -98,6 +114,14 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /v1/devices/{id}/ssh", func(w http.ResponseWriter, r *http.Request) {
 		info, err := s.service.SSH(r.Context(), r.PathValue("id"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, info)
+	})
+	mux.HandleFunc("GET /v1/devices/{id}/target", func(w http.ResponseWriter, r *http.Request) {
+		info, err := s.service.Target(r.Context(), r.PathValue("id"))
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
@@ -251,6 +275,12 @@ func (s *Server) ServeLocal(ctx context.Context, socketPath string) error {
 		return err
 	}
 	server := &http.Server{
+		ConnContext: func(ctx context.Context, connection net.Conn) context.Context {
+			if uid, gid, ok := peerOwner(connection); ok {
+				return WithOwner(ctx, uid, gid)
+			}
+			return ctx
+		},
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			s.Handler().ServeHTTP(w, r.WithContext(WithPeer(r.Context(), "local")))
 		}),

@@ -648,6 +648,7 @@ func (s *Service) BuildISO(ctx context.Context, request httpapi.ISORequest) (str
 	if err := s.requireLocal(ctx); err != nil {
 		return "", err
 	}
+	request.OwnerUID, request.OwnerGID, request.OwnerKnown = httpapi.Owner(ctx)
 	job, err := s.JobManager.Create(jobs.KindISO, s.Store.Identity.Fingerprint(), s.Store.Identity.Fingerprint())
 	if err != nil {
 		return "", err

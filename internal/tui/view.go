@@ -407,6 +407,8 @@ func (m model) viewTrustScreen() string {
 			}
 		}
 		body.WriteString("\n")
+		body.WriteString(dimStyle.Render("Pairing is two-sided and nothing pops up. Confirm here and on the peer with the same code."))
+		body.WriteString("\n")
 	}
 	if len(m.trust) > 0 {
 		if compact {
@@ -463,17 +465,22 @@ func (m model) viewFormScreen() string {
 		if index == m.form.index {
 			cursor = "▸ "
 		}
-		value := m.form.values[index]
-		if strings.Contains(strings.ToLower(label), "password") && value != "" {
-			value = strings.Repeat("*", len(value))
+		value := m.form.displayValue(index)
+		body.WriteString(fmt.Sprintf("%s%-20s %s\n", cursor, label, truncate(value, width-26)))
+		if index == m.form.index && m.form.hints[index] != "" {
+			body.WriteString(dimStyle.Render("    " + m.form.hints[index]))
+			body.WriteString("\n")
 		}
-		body.WriteString(fmt.Sprintf("%s%-12s %s\n", cursor, label, truncate(value, width-20)))
 	}
 	title := strings.Title(m.form.kind)
 	if m.form.kind == "iso" {
 		title = "ISO"
 	}
-	return m.screen(title, body.String(), "tab next   enter next or submit   ctrl+s submit   esc cancel")
+	footer := "tab next   enter next or submit   ctrl+s submit   esc cancel"
+	if len(m.form.choices[m.form.index]) > 0 {
+		footer = "left/right choose   " + footer
+	}
+	return m.screen(title, body.String(), footer)
 }
 
 func (m model) selfAddress() string {

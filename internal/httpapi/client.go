@@ -85,6 +85,12 @@ func (c *Client) SSH(ctx context.Context, id string) (SSHInfo, error) {
 	return result, err
 }
 
+func (c *Client) Target(ctx context.Context, id string) (TargetInfo, error) {
+	var result TargetInfo
+	err := c.do(ctx, http.MethodGet, "/v1/devices/"+id+"/target", nil, &result)
+	return result, err
+}
+
 func (c *Client) Jobs(ctx context.Context) ([]jobs.Job, error) {
 	var result []jobs.Job
 	err := c.do(ctx, http.MethodGet, "/v1/jobs", nil, &result)

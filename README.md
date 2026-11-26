@@ -9,8 +9,8 @@ flake registration. It ships a daemon, a CLI with a TUI (`nixconnect`, alias
 
 Status: the daemon, CLI, TUI, GTK4 client, deploy and update flows, pairing,
 key rotation and sharing, trust revocation, publish and the deploytarget ISO are
-implemented. The local control socket does not yet identify callers by UID and
-the daemon runs as root; the design's service-user split is open. The governing
+implemented. The local control socket identifies callers by UID, but the daemon
+runs as root and the design's service-user split is open. The governing
 design is [docs/design.md](docs/design.md). The delivery plan is
 [docs/implementation-plan.md](docs/implementation-plan.md).
 
@@ -153,8 +153,9 @@ Nix out-link. The default out-link is `deploy-target-iso` in the current
 directory; `--output PATH` or `-o PATH` overrides it, and `~` in `PATH` expands
 to the caller's home directory. The out-link points to the Nix result directory,
 so the image is at
-`deploy-target-iso/iso/deploytarget-<short-id>.iso`. The daemon does not copy
-the image. The direct expression builds the generic image used by CI.
+`deploy-target-iso/iso/deploytarget-<short-id>.iso`. The out-link and every
+directory the daemon creates for it belong to the invoking user. The daemon does
+not copy the image. The direct expression builds the generic image used by CI.
 
 The image boots to a console, connects wired networking with DHCP and starts the
 daemon. On Wi-Fi, run `nmtui` from the console. Module options for

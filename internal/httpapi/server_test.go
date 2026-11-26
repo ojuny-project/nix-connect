@@ -15,10 +15,13 @@ import (
 )
 
 type fakeService struct {
-	status    Status
-	devices   []Device
-	jobs      []jobs.Job
-	confirmer string
+	status     Status
+	devices    []Device
+	jobs       []jobs.Job
+	confirmer  string
+	ownerUID   int
+	ownerGID   int
+	ownerKnown bool
 }
 
 func (f *fakeService) Status(ctx context.Context) Status {
@@ -47,6 +50,10 @@ func (f *fakeService) Update(ctx context.Context, id string, request UpdateReque
 
 func (f *fakeService) SSH(ctx context.Context, id string) (SSHInfo, error) {
 	return SSHInfo{Host: "10.0.0.1", User: "nixos", Port: 22}, nil
+}
+
+func (f *fakeService) Target(ctx context.Context, id string) (TargetInfo, error) {
+	return TargetInfo{Firmware: "efi", Disks: []Disk{{Path: "/dev/nvme0n1", Type: "disk"}}}, nil
 }
 
 func (f *fakeService) Jobs(ctx context.Context) []jobs.Job {
@@ -108,6 +115,7 @@ func (f *fakeService) RotateAdminKey(ctx context.Context) (string, error) {
 }
 
 func (f *fakeService) BuildISO(ctx context.Context, request ISORequest) (string, error) {
+	f.ownerUID, f.ownerGID, f.ownerKnown = Owner(ctx)
 	return "job", nil
 }
 
@@ -182,5 +190,14 @@ func TestLocalTransport(t *testing.T) {
 	}
 	if status.Hostname != "host" {
 		t.Fatalf("unexpected status %+v", status)
+	}
+	if _, err := client.BuildISO(context.Background(), ISORequest{Output: "/tmp/deploy-target-iso"}); err != nil {
+		t.Fatal(err)
+	}
+	if !service.ownerKnown {
+		t.Fatal("local owner was not recorded")
+	}
+	if service.ownerUID != os.Getuid() || service.ownerGID != os.Getgid() {
+		t.Fatalf("unexpected owner %d:%d", service.ownerUID, service.ownerGID)
 	}
 }

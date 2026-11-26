@@ -28,6 +28,7 @@ type recordingService struct {
 	keyShare     KeyShareRequest
 	iso          ISORequest
 	publish      PublishRequest
+	target       TargetInfo
 	failRegister bool
 }
 
@@ -64,6 +65,10 @@ func (s *recordingService) Update(_ context.Context, _ string, request UpdateReq
 
 func (s *recordingService) SSH(context.Context, string) (SSHInfo, error) {
 	return SSHInfo{Host: "10.0.0.2", User: "harness", Port: 22, AgentSocket: "/tmp/agent.sock"}, nil
+}
+
+func (s *recordingService) Target(context.Context, string) (TargetInfo, error) {
+	return s.target, nil
 }
 
 func (s *recordingService) Jobs(context.Context) []jobs.Job {
@@ -192,6 +197,11 @@ func TestClientRequestsAndResponses(t *testing.T) {
 	ssh, err := client.SSH(ctx, "peer")
 	if err != nil || ssh.Host != "10.0.0.2" || ssh.Port != 22 {
 		t.Fatalf("ssh: %+v %v", ssh, err)
+	}
+	service.target = TargetInfo{Firmware: "efi", Disks: []Disk{{Path: "/dev/nvme0n1", Type: "disk"}}}
+	target, err := client.Target(ctx, "peer")
+	if err != nil || target.Firmware != "efi" || len(target.Disks) != 1 || target.Disks[0].Path != "/dev/nvme0n1" {
+		t.Fatalf("target: %+v %v", target, err)
 	}
 	list, err := client.Jobs(ctx)
 	if err != nil || len(list) != 1 || list[0].ID != "job" {

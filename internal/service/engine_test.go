@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -20,10 +21,14 @@ type engineFakeRunner struct {
 	closure    string
 	activation string
 	warning    string
+	disks      string
 }
 
 func (f *engineFakeRunner) Run(_ context.Context, _ string, _ []string, name string, args ...string) (string, error) {
 	f.calls = append(f.calls, name+" "+strings.Join(args, " "))
+	if name == "lsblk" {
+		return f.disks, nil
+	}
 	if name == "nix" {
 		for index, argument := range args {
 			if argument != "-o" || index+1 >= len(args) {
@@ -187,8 +192,14 @@ func TestRunISOStagesTheImage(t *testing.T) {
 	}
 	runner := &engineFakeRunner{closure: built, warning: "warning: evaluation warning\n"}
 	service.EngineRunner = runner
-	output := filepath.Join(t.TempDir(), "deploy-target-iso")
-	if err := service.RunISO(context.Background(), "iso-job", httpapi.ISORequest{Output: output}); err != nil {
+	output := filepath.Join(t.TempDir(), "nested", "iso", "deploy-target-iso")
+	request := httpapi.ISORequest{
+		Output:     output,
+		OwnerUID:   os.Getuid(),
+		OwnerGID:   os.Getgid(),
+		OwnerKnown: true,
+	}
+	if err := service.RunISO(context.Background(), "iso-job", request); err != nil {
 		t.Fatal(err)
 	}
 	link, err := os.Lstat(output)
@@ -197,6 +208,18 @@ func TestRunISOStagesTheImage(t *testing.T) {
 	}
 	if link.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("output is not an out-link: %s", link.Mode())
+	}
+	linkOwner, ok := link.Sys().(*syscall.Stat_t)
+	if !ok || int(linkOwner.Uid) != os.Getuid() || int(linkOwner.Gid) != os.Getgid() {
+		t.Fatalf("out-link keeps a foreign owner: %+v", linkOwner)
+	}
+	parent, err := os.Stat(filepath.Dir(output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentOwner, ok := parent.Sys().(*syscall.Stat_t)
+	if !ok || int(parentOwner.Uid) != os.Getuid() || int(parentOwner.Gid) != os.Getgid() {
+		t.Fatalf("created directory keeps a foreign owner: %+v", parentOwner)
 	}
 	target, err := os.Readlink(output)
 	if err != nil {

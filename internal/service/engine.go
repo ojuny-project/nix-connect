@@ -191,11 +191,16 @@ func (s *Service) RunISO(ctx context.Context, jobID string, request httpapi.ISOR
 	}
 	s.JobManager.AppendLog(jobID, "building deploytarget ISO")
 	flake := "path:" + source + "#nixosConfigurations.deploytarget.config.system.build.isoImage"
+	callerOutput := request.Output != ""
 	destination := request.Output
 	if destination == "" {
 		destination = filepath.Join(s.Store.ISODir(), "deploy-target-iso")
 	}
-	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+	if callerOutput && request.OwnerKnown {
+		if err := mkdirAllOwned(filepath.Dir(destination), request.OwnerUID, request.OwnerGID); err != nil {
+			return err
+		}
+	} else if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
 		return err
 	}
 	output, err := s.runner().Run(ctx, source, nil, "nix", "build", "-o", destination, "--print-out-paths", flake)
@@ -217,9 +222,15 @@ func (s *Service) RunISO(ctx context.Context, jobID string, request httpapi.ISOR
 	if image == "" {
 		return fmt.Errorf("service: no ISO image in %s", built)
 	}
-	if parent, err := os.Stat(filepath.Dir(destination)); err == nil {
+	if callerOutput && request.OwnerKnown {
+		if err := os.Lchown(destination, request.OwnerUID, request.OwnerGID); err != nil {
+			return fmt.Errorf("service: link deploytarget ISO: %w", err)
+		}
+	} else if parent, err := os.Stat(filepath.Dir(destination)); err == nil {
 		if stat, ok := parent.Sys().(*syscall.Stat_t); ok {
-			_ = os.Lchown(destination, int(stat.Uid), int(stat.Gid))
+			if err := os.Lchown(destination, int(stat.Uid), int(stat.Gid)); err != nil {
+				return fmt.Errorf("service: link deploytarget ISO: %w", err)
+			}
 		}
 	}
 	s.JobManager.AppendLog(jobID, "linked "+destination)
@@ -454,4 +465,38 @@ func firstLine(value string) string {
 		return strings.TrimSpace(value[:index])
 	}
 	return value
+}
+
+// mkdirAllOwned creates path and every missing ancestor, giving each
+// directory it creates to the caller.
+func mkdirAllOwned(path string, uid, gid int) error {
+	missing := []string{}
+	for current := path; ; current = filepath.Dir(current) {
+		info, err := os.Stat(current)
+		if err == nil {
+			if !info.IsDir() {
+				return fmt.Errorf("service: %s is not a directory", current)
+			}
+			break
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		missing = append(missing, current)
+		if filepath.Dir(current) == current {
+			break
+		}
+	}
+	for index := len(missing) - 1; index >= 0; index-- {
+		if err := os.Mkdir(missing[index], 0o700); err != nil {
+			if errors.Is(err, os.ErrExist) {
+				continue
+			}
+			return err
+		}
+		if err := os.Chown(missing[index], uid, gid); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -41,6 +41,10 @@ func (fakeService) SSH(context.Context, string) (httpapi.SSHInfo, error) {
 	return httpapi.SSHInfo{Host: "10.0.0.2", User: "harness", Port: 22}, nil
 }
 
+func (fakeService) Target(context.Context, string) (httpapi.TargetInfo, error) {
+	return httpapi.TargetInfo{Firmware: "efi"}, nil
+}
+
 func (fakeService) Jobs(context.Context) []jobs.Job {
 	return []jobs.Job{{ID: "job", State: jobs.StateSucceeded}}
 }
